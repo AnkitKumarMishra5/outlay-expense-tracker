@@ -80,6 +80,7 @@ Sessions lock after fifteen idle minutes. Settings holds a full JSON export and 
 | **Verify** | Twelve checks per statement, including computed totals against the totals the bank printed |
 | **Correct** | Edit an amount, delete a mis-read row, change a category. Totals and checks recalculate on every edit |
 | **Categorise** | Rule-based on the merchant string, editable everywhere, with an optional AI review capped at two runs per card per month |
+| **Recurring** | Same merchant, same amount, steady cycle, detected across statements and costed per year |
 | **Settle** | Per-statement due, overdue and settled status, with the dashboard counting the current cycle |
 | **Analyse** | Spend by card, category and month across five ranges, plus a spend-and-dues calendar |
 | **Browse** | Every transaction across every card on one page, filtered by card, statement, category, type or text |

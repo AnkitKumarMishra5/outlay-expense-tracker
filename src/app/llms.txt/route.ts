@@ -22,6 +22,7 @@ ${APP_NAME} opens the password-protected PDF an Indian bank emails every month, 
 - Unlocks and reads the PDF in memory. Nothing is written to disk.
 - Extracts transactions deterministically. No model is involved in reading a statement.
 - Runs twelve verification checks before saving, including computed debit and credit totals against the totals printed on the statement.
+- Detects recurring charges: the same merchant at the same amount on a monthly or yearly cycle, across statements, costed per year.
 - Tracks each statement as due, overdue or settled, counted against the current billing cycle.
 - Reports spend by card, category and month, with a calendar carrying both daily spend and payment due dates.
 

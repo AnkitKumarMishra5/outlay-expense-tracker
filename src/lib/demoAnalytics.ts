@@ -1,5 +1,6 @@
 import { DEMO_CARDS, DEMO_DUES, DEMO_TXNS } from "./demo";
 import { Analytics } from "./types";
+import { detectSubscriptions } from "./subscriptions";
 import { Range, rangeStart } from "./format";
 
 const round = (n: number) => Math.round(n * 100) / 100;
@@ -48,7 +49,23 @@ export function demoAnalytics(range: Range, cardIndex: number | null): Analytics
     };
   }).sort((a, b) => b.debits - a.debits);
 
+  const subscriptions = detectSubscriptions(
+    DEMO_TXNS.filter((t) => t.type === "debit" && t.category !== "Payments & Refunds").map((t) => {
+      const card = DEMO_CARDS[t.card];
+      return {
+        cardId: card.id,
+        cardLabel: card.card_label,
+        bankId: card.bank_id,
+        last4: card.last4,
+        date: t.date,
+        description: t.desc,
+        amount: t.amount,
+      };
+    })
+  ).filter((sub) => cardIndex === null || sub.cardId === DEMO_CARDS[cardIndex].id);
+
   return {
+    subscriptions,
     totals: {
       debits: round(debits.reduce((a, t) => a + t.amount, 0)),
       credits: round(credits.reduce((a, t) => a + t.amount, 0)),

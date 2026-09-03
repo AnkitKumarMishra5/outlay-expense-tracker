@@ -15,7 +15,7 @@ const ITEMS = [
   },
   {
     title: "The subscription that renewed",
-    body: "The same merchant, the same amount, every month. Grouped so it stops hiding in the list.",
+    body: "The same merchant, the same amount, on a steady cycle. Found across your statements and totalled for the year.",
     art: (
       <svg viewBox="0 0 120 84" fill="none" aria-hidden className="illus">
         <circle cx="60" cy="42" r="26" className="illus-ring" />

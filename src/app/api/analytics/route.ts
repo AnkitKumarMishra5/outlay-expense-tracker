@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { Range, rangeStart } from "@/lib/format";
 import { currentUserId, unauthorized } from "@/lib/auth";
 import { decryptOrNull } from "@/lib/crypto";
+import { detectSubscriptions } from "@/lib/subscriptions";
 
 export async function GET(req: NextRequest) {
   const userId = await currentUserId(req);
@@ -38,6 +39,27 @@ export async function GET(req: NextRequest) {
   if (cardId) { dueArgs.push(cardId); dueFilter = ` AND s.card_id = $${dueArgs.length}`; }
 
   const c = await db();
+  const [recurringRows] = await Promise.all([
+    c.execute(
+      `SELECT t.txn_date, t.description, t.amount, cards.id AS card_id, cards.card_label, cards.bank_id, cards.last4_enc
+       FROM transactions t JOIN cards ON cards.id = t.card_id
+       WHERE t.user_id = $1 AND t.type = 'debit' AND t.category <> 'Payments & Refunds'
+       ORDER BY t.txn_date`,
+      [userId]
+    ),
+  ]);
+  const subscriptions = detectSubscriptions(
+    recurringRows.rows.map((r) => ({
+      cardId: r.card_id as string,
+      cardLabel: r.card_label as string,
+      bankId: r.bank_id as string,
+      last4: decryptOrNull(r.last4_enc as string | null, userId),
+      date: r.txn_date as string,
+      description: r.description as string,
+      amount: Number(r.amount),
+    }))
+  );
+
   const [totals, byMonth, byCategory, byCard, recent, byDay, dayCards, dues] = await Promise.all([
     c.execute(
       `SELECT
@@ -122,6 +144,7 @@ export async function GET(req: NextRequest) {
     byMonth: byMonth.rows,
     byCategory: byCategory.rows,
     byCard: reveal(byCard.rows),
+    subscriptions,
     recent: recent.rows,
     byDay: byDay.rows,
     dayCards: reveal(dayCards.rows),

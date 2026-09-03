@@ -74,5 +74,6 @@ export interface Analytics {
   recent: { id: string; txn_date: string; description: string; amount: number; type: string; category: string; is_fee: number }[];
   byDay: { day: string; debits: number; txns: number }[];
   dayCards: { day: string; card_id: string; card_label: string; bank_id: string; last4: string | null; debits: number; txns: number }[];
+  subscriptions: import("./subscriptions").Subscription[];
   dues: { id: string; card_id: string; day: string; statement_date: string | null; amount: number | null; min_due: number | null; settled: boolean; paid_at: string | null; card_label: string; bank_id: string; last4: string | null }[];
 }

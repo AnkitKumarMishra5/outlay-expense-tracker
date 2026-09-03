@@ -9,6 +9,7 @@ import CardSpendBars from "@/components/charts/CardSpendBars";
 import TxnTable from "@/components/TxnTable";
 import SpendCalendar from "@/components/SpendCalendar";
 import BillsPanel from "@/components/BillsPanel";
+import Subscriptions from "@/components/Subscriptions";
 import CountUp from "@/components/CountUp";
 import { inr, Range, RANGE_LABELS } from "@/lib/format";
 import { Analytics, CardRow } from "@/lib/types";
@@ -110,6 +111,8 @@ export default function DashboardView({
           </div>
 
           <BillsPanel bills={data.dues ?? []} onSettle={onSettle} />
+
+          <Subscriptions subs={data.subscriptions ?? []} />
 
           <div
             className="grid min-w-0 grid-cols-1 gap-4 transition-opacity duration-300 lg:grid-cols-2"
