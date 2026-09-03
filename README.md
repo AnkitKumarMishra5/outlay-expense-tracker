@@ -14,27 +14,43 @@ Scope is narrow on purpose: credit card statements only. Not budgeting, not net 
 
 ## A look at it
 
-<p align="center">
-  <img src="docs/screenshots/dashboard.png" width="900" alt="Dashboard: nineteen cards, spend tiles, bills awaiting settlement, spend trend, category split">
-</p>
+**The dashboard.** Every card you hold, ranked by spend, with the bills of the current cycle and how many are still outstanding.
 
 <p align="center">
-  <img src="docs/screenshots/statement.png" width="900" alt="Statement detail: verification checks with pass, warning and failure states, and the transaction list">
+  <img src="docs/screenshots/dashboard.png" width="900" alt="Dashboard: nineteen cards ranked by spend, four headline figures, a bills panel showing seventeen of nineteen settled this cycle, spend trend and category split">
 </p>
+
+**A statement, verified.** Twelve checks run before anything is saved, and the result is stored with the statement. Every category is a dropdown, so a wrong guess takes one click to fix.
 
 <p align="center">
-  <img src="docs/screenshots/statements.png" width="900" alt="Statement list: every statement across every card, with its settled status and check summary">
+  <img src="docs/screenshots/statement.png" width="900" alt="Statement detail: verification checks with passes and warnings, then the transaction list with a colour-coded category dropdown on every row">
 </p>
+
+**The calendar.** Daily spend and every payment due on one grid. Amber means a bill falls due, green means it is settled.
 
 <p align="center">
-  <img src="docs/screenshots/transactions.png" width="900" alt="Transactions page: every row across every card, filtered by card, statement and category">
+  <img src="docs/screenshots/calendar.png" width="900" alt="Calendar for September: spend heat per day, amber badges for bills due and green ticks for settled ones">
 </p>
+
+**Every transaction, one page.** Filter by card, by statement, by category or by text, and correct a category inline.
 
 <p align="center">
-  <img src="docs/screenshots/upload.png" width="900" alt="Upload: a month of PDFs at once, each unlocked and matched to a card">
+  <img src="docs/screenshots/transactions.png" width="900" alt="Transactions page: filters for search, card, statement and category, and a table of every transaction across every card">
 </p>
 
-The landing page runs the whole dashboard on invented cards and invented spend, so you can try it before signing up.
+**Statements.** What has been read, what it checked out at, and what is still to pay.
+
+<p align="center">
+  <img src="docs/screenshots/statements.png" width="900" alt="Statement list: every statement across every card with its settled status and check summary">
+</p>
+
+**Upload.** A month of PDFs at once. Each one is unlocked, read and matched to a card before anything is written.
+
+<p align="center">
+  <img src="docs/screenshots/upload.png" width="900" alt="Upload screen: drop a month of password-protected statement PDFs at once">
+</p>
+
+The landing page runs this whole dashboard on invented cards and invented spend, so you can try it before signing up.
 
 ---
 
@@ -237,7 +253,27 @@ Create an account with the invite code the keygen printed, then enter the cardho
 
 ## Deploy your own
 
-Free tier end to end: Neon for the database, Vercel for the app. Set `DATABASE_URL` to the pooled Neon connection string, `APP_ENCRYPTION_KEY` to a fresh 32-byte hex key, and `SIGNUP_INVITE_CODE` to a secret only you hold. The app returns 503 on every route until all three are present. `OPENAI_API_KEY` is optional and the only thing that ever costs money.
+Free tier end to end: Neon for the database, Vercel for the app.
+
+Generate the two secrets, printed and not written to any file:
+
+```bash
+node -e "const c=require('node:crypto');console.log('APP_ENCRYPTION_KEY='+c.randomBytes(32).toString('hex'));console.log('SIGNUP_INVITE_CODE='+c.randomBytes(9).toString('base64url'))"
+```
+
+Set three variables in Vercel, for Production and Preview:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | the **pooled** Neon connection string |
+| `APP_ENCRYPTION_KEY` | the 64 hex characters printed above |
+| `SIGNUP_INVITE_CODE` | the code printed above, which is what you give people |
+
+The app returns 503 on every route until all three are present, so a half-configured deployment never serves a login form.
+
+`APP_ENCRYPTION_KEY` is not rotatable. Every name, date of birth, card digit and statement password is sealed under a key derived from it, so changing it after data exists makes that data permanently unreadable. Use a different key from your local one, and keep a copy somewhere safe.
+
+`OPENAI_API_KEY` is optional and the only variable that ever costs money.
 
 ## Tech stack
 
