@@ -60,8 +60,7 @@ export default function Footer() {
         </div>
 
         <p data-reveal style={{ "--d": "170ms" } as React.CSSProperties} className="mt-8 text-xs text-muted">
-          © {new Date().getFullYear()} {DEVELOPER.name}. Statement data is encrypted under your own account
-          key. MIT licensed.{" "}
+          © {new Date().getFullYear()} {DEVELOPER.name}. Only you can see your statements. MIT licensed.{" "}
           <Link href="/privacy" className="underline underline-offset-2 hover:text-ink">Privacy</Link> ·{" "}
           <Link href="/terms" className="underline underline-offset-2 hover:text-ink">Terms</Link>
         </p>

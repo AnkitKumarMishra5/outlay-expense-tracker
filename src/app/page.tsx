@@ -72,12 +72,13 @@ export default function Landing() {
   return (
     <div className="space-y-16">
       <section className="pt-4 text-center">
-        <span className="rise inline-flex items-center gap-2 rounded-full border border-line bg-surface2 px-3 py-1 text-xs text-ink2">
+        <span className="rise inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-surface2 px-3 py-1 text-[11px] text-ink2 sm:text-xs">
           <Logo size={16} />
-          Invite only. Your statement data is encrypted under your account.
+          <span className="sm:hidden">Only you can see your statements</span>
+          <span className="hidden sm:inline">Invite only. Only you can see your statements.</span>
         </span>
         <h1
-          className="rise mx-auto mt-5 max-w-3xl text-balance text-3xl font-semibold leading-tight tracking-tight sm:text-5xl"
+          className="rise mx-auto mt-4 max-w-3xl text-balance text-3xl font-semibold leading-tight tracking-tight sm:mt-5 sm:text-5xl"
           style={{ "--d": "60ms" } as React.CSSProperties}
         >
           Every card you hold, reconciled every month
@@ -186,8 +187,8 @@ export default function Landing() {
           </Link>
         </div>
         <p className="mt-6 text-xs text-muted">
-          Files are parsed in memory and never written to disk. Your name, date of birth, card digits and statement
-          passwords are encrypted under a key derived for your account alone.
+          Statement files are read and thrown away, never saved. Your name, date of birth, card digits and statement
+          passwords are locked with a key that belongs to your account and no one else&apos;s.
         </p>
       </section>
     </div>

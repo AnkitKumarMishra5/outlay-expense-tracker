@@ -2,7 +2,8 @@ import { ImageResponse } from "next/og";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const alt = "Outlay by Ankit Kumar Mishra, expense tracker and validator for Indian credit card statements";
+export const alt =
+  "Outlay by Ankit Kumar Mishra. Every card you hold, reconciled every month. Expense tracker and validator for Indian credit card statements";
 
 export default function OpengraphImage() {
   return new ImageResponse(
@@ -37,15 +38,15 @@ export default function OpengraphImage() {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <div style={{ fontSize: 60, fontWeight: 700, letterSpacing: -2, lineHeight: 1.1, maxWidth: 940 }}>
-            Track, validate and analyse card spend
+            Every card you hold, reconciled every month
           </div>
           <div style={{ fontSize: 29, color: "#b6c4d6", maxWidth: 940 }}>
-            Unlocks password-protected Indian credit card statements, reconciles them against the printed totals, and
-            breaks down every rupee.
+            Opens the password-protected statement your bank emails you, checks the totals against the bank&apos;s own
+            figures, and tracks spending and dues across every card.
           </div>
         </div>
         <div style={{ display: "flex", gap: 14, fontSize: 22, color: "#7f8fa5" }}>
-          <div style={{ border: "1px solid #1e2b3d", borderRadius: 999, padding: "8px 20px" }}>Encrypted at rest</div>
+          <div style={{ border: "1px solid #1e2b3d", borderRadius: 999, padding: "8px 20px" }}>12 checks per statement</div>
           <div style={{ border: "1px solid #1e2b3d", borderRadius: 999, padding: "8px 20px" }}>AES-256-GCM at rest</div>
           <div style={{ border: "1px solid #1e2b3d", borderRadius: 999, padding: "8px 20px" }}>Next.js · Postgres</div>
         </div>

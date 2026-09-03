@@ -22,6 +22,7 @@ export default function Nav() {
   const pathname = usePathname();
   const wrapRef = useRef<HTMLElement>(null);
   const [ind, setInd] = useState({ left: 0, width: 0, ready: false });
+  const [open, setOpen] = useState(false);
 
   const activeHref = LINKS.reduce(
     (best, l) => ((l.href === "/" ? pathname === "/" : pathname.startsWith(l.href)) ? l.href : best),
@@ -40,6 +41,14 @@ export default function Nav() {
     return () => window.removeEventListener("resize", measure);
   }, [measure]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const shellRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onScroll = () => {
@@ -54,7 +63,7 @@ export default function Nav() {
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-bg/85 backdrop-blur-md backdrop-saturate-150">
-      <div ref={shellRef} className="navbar-shell mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-2 gap-y-2 px-3 py-3 sm:flex-nowrap sm:gap-4 sm:px-6">
+      <div ref={shellRef} className="navbar-shell mx-auto flex w-full max-w-6xl items-center gap-2 px-3 py-3 sm:gap-4 sm:px-6">
         <Link href="/" className="flex shrink-0 items-center gap-2.5 font-semibold tracking-tight">
           <Logo size={26} animate />
           <span className="hidden flex-col leading-none xs:flex sm:flex">
@@ -64,7 +73,7 @@ export default function Nav() {
             </span>
           </span>
         </Link>
-        <nav ref={wrapRef} className="relative order-3 flex w-full min-w-0 gap-1 overflow-x-auto text-sm sm:order-none sm:w-auto sm:flex-1">
+        <nav ref={wrapRef} className="relative hidden min-w-0 flex-1 gap-1 text-sm sm:flex">
           {ind.ready && (
             <span
               aria-hidden
@@ -90,7 +99,40 @@ export default function Nav() {
           <SoundToggle />
           <ThemeToggle />
           <AboutDialog />
+          <button
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-controls="nav-menu"
+            aria-label={open ? "Close menu" : "Open menu"}
+            className="rounded-lg border border-line p-1.5 text-ink2 transition-colors hover:border-muted hover:text-ink sm:hidden"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+              {open ? (
+                <path d="M5 5l14 14M19 5L5 19" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+              ) : (
+                <path d="M3.6 7h16.8M3.6 12h16.8M3.6 17h16.8" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+              )}
+            </svg>
+          </button>
         </div>
+      </div>
+
+      <div id="nav-menu" className={`nav-sheet sm:hidden ${open ? "is-open" : ""}`}>
+        <nav className="mx-auto flex w-full max-w-6xl flex-col gap-1 px-3 pb-3">
+          {LINKS.map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              onClick={() => setOpen(false)}
+              aria-current={l.href === activeHref ? "page" : undefined}
+              className={`rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                l.href === activeHref ? "bg-surface2 text-ink" : "text-ink2 hover:bg-surface2/60 hover:text-ink"
+              }`}
+            >
+              {l.label}
+            </Link>
+          ))}
+        </nav>
       </div>
     </header>
   );

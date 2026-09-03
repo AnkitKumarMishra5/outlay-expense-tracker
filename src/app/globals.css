@@ -1345,3 +1345,33 @@ button:active:not(:disabled) {
   .ai-stages li.active .ai-stage-dot { animation: none; }
   .ai-panel, .ai-scrim { animation: none; }
 }
+
+.nav-sheet {
+  display: grid;
+  grid-template-rows: 0fr;
+  overflow: hidden;
+  border-top: 1px solid transparent;
+  transition: grid-template-rows 0.28s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.28s ease;
+}
+
+.nav-sheet > nav {
+  min-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.22s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.nav-sheet.is-open {
+  grid-template-rows: 1fr;
+  border-top-color: var(--color-line);
+}
+
+.nav-sheet.is-open > nav {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-sheet,
+  .nav-sheet > nav { transition: none; }
+}

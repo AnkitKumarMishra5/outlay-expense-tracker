@@ -6,6 +6,8 @@ import Footer from "@/components/Footer";
 import ToastProvider from "@/components/Toasts";
 import RouteProgress from "@/components/RouteProgress";
 import { APP_NAME, APP_TAGLINE, DEVELOPER } from "@/lib/developer";
+import { siteUrl } from "@/lib/site";
+import StructuredData from "@/components/StructuredData";
 
 const plexSans = IBM_Plex_Sans({
   variable: "--font-plex-sans",
@@ -15,8 +17,6 @@ const plexSans = IBM_Plex_Sans({
 const plexMono = IBM_Plex_Mono({ variable: "--font-plex-mono", subsets: ["latin"], weight: ["400", "500"] });
 
 const description = `${APP_TAGLINE} Unlocks password-protected statement PDFs, validates them against the printed totals, categorises every transaction, and analyses spend across all your cards. Built by ${DEVELOPER.name}.`;
-
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "http://localhost:3000";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -40,9 +40,16 @@ export const metadata: Metadata = {
     title: `${APP_NAME} by ${DEVELOPER.name}`,
     description,
     locale: "en_IN",
+    url: siteUrl,
   },
   twitter: { card: "summary_large_image", title: `${APP_NAME} by ${DEVELOPER.name}`, description },
-  robots: { index: false, follow: false },
+  alternates: { canonical: "/" },
+  category: "finance",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 },
+  },
   formatDetection: { telephone: false, email: false, address: false },
 };
 
@@ -62,6 +69,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className={`${plexSans.variable} ${plexMono.variable} antialiased flex min-h-screen flex-col`}>
+        <StructuredData />
         <div className="aurora" aria-hidden />
         <ToastProvider>
           <RouteProgress />

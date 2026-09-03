@@ -5,6 +5,10 @@ const PUBLIC_PATHS = new Set([
   "/",
   "/login",
   "/register",
+  "/privacy",
+  "/terms",
+  "/sitemap.xml",
+  "/llms.txt",
   "/api/auth/login",
   "/api/auth/register",
   "/api/auth/session",
@@ -55,5 +59,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/|favicon.ico|icon.svg|opengraph-image|manifest.webmanifest|robots.txt|.*\\.(?:jpg|png|svg|webp)$).*)"],
+  matcher: ["/((?!_next/|favicon.ico|icon.svg|opengraph-image|manifest.webmanifest|robots.txt|sitemap.xml|llms.txt|.*\\.(?:jpg|png|svg|webp)$).*)"],
 };
