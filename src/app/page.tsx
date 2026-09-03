@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import DashboardView from "@/components/DashboardView";
 import Logo from "@/components/Logo";
+import FindingIllustrations from "@/components/FindingIllustrations";
 import { INVITE_MAILTO } from "@/lib/developer";
 import { DEMO_CARDS } from "@/lib/demo";
 import { demoAnalytics } from "@/lib/demoAnalytics";
@@ -172,10 +173,12 @@ export default function Landing() {
           Now imagine those were your numbers
         </h2>
         <p className="mx-auto mt-3 max-w-xl text-balance text-sm text-ink2">
-          The fees you did not notice. The subscription that renewed. The month you spent more than you thought. It is
-          all already in the statements sitting in your inbox, waiting to be added up.
+          It is all already in the statements sitting in your inbox, waiting to be added up.
         </p>
-        <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
+
+        <FindingIllustrations />
+
+        <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/register"
             className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
