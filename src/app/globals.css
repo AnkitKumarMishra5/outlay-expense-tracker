@@ -1635,120 +1635,181 @@ button:active:not(:disabled) {
   to { transform: none; }
 }
 
-/* ---------- Celebration: a balance cleared ---------- */
+/* ---------- Settling a bill: the card lands, the balance runs down ---------- */
 
-.cele-scrim {
+.stl-scrim {
   position: fixed;
   inset: 0;
   z-index: 70;
   display: grid;
   place-items: center;
-  background: color-mix(in srgb, var(--color-bg) 62%, transparent);
-  backdrop-filter: blur(2px);
-  animation: cele-scrim 2.1s ease-in-out both;
+  background:
+    radial-gradient(60% 45% at 50% 42%, color-mix(in srgb, var(--color-accent) 10%, transparent) 0%, transparent 70%),
+    color-mix(in srgb, var(--color-bg) 72%, transparent);
+  backdrop-filter: blur(4px);
+  animation: stl-scrim 2.6s ease-in-out both;
   pointer-events: none;
 }
 
-.cele-stage {
-  position: relative;
+.stl-stage {
   display: grid;
-  place-items: center;
-  width: min(300px, calc(100vw - 48px));
+  justify-items: center;
+  width: min(320px, calc(100vw - 48px));
+  perspective: 1200px;
 }
 
-.cele-card {
+/* The card and the shadow it casts are separate, so the shadow can tighten
+   as the card comes down. Shadow distance is what sells the landing. */
+.stl-deck {
+  position: relative;
   width: 100%;
-  animation: cele-card 0.7s cubic-bezier(0.22, 1.4, 0.36, 1) both;
-  filter: drop-shadow(0 30px 40px rgb(0 0 0 / 0.45));
+  transform-style: preserve-3d;
 }
 
-.cele-stamp {
+.stl-shadow {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 96px;
-  height: 96px;
-  margin: -48px 0 0 -48px;
-  transform: rotate(-12deg);
-  animation: cele-stamp 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) 0.18s both;
-  filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--color-good) 55%, transparent));
+  left: 8%;
+  right: 8%;
+  bottom: -9%;
+  height: 22%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(0 0 0 / 0.62), transparent 78%);
+  animation: stl-shadow 1s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.cele-stamp svg { width: 100%; height: 100%; }
-
-.cele-stamp-ring {
-  fill: color-mix(in srgb, var(--color-good) 22%, var(--color-surface));
-  stroke: var(--color-good);
-  stroke-width: 4;
-  stroke-dasharray: 183;
-  stroke-dashoffset: 183;
-  animation: draw 0.5s ease-out 0.25s forwards;
+.stl-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 3.715% / 5.891%;
+  transform-origin: 50% 100%;
+  animation: stl-land 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform;
 }
 
-.cele-stamp-check {
-  stroke: var(--color-good);
-  stroke-width: 6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-dasharray: 40;
-  stroke-dashoffset: 40;
-  animation: draw 0.32s ease-out 0.5s forwards;
+.stl-card > .cc { pointer-events: none; }
+
+/* A specular highlight raking across the face, the way light crosses real
+   plastic when it tilts. The second pass is the faint trailing glint. */
+.stl-rake {
+  position: absolute;
+  inset: -30% -10%;
+  background: linear-gradient(
+    100deg,
+    transparent 36%,
+    rgb(255 255 255 / 0.14) 44%,
+    rgb(255 255 255 / 0.82) 50%,
+    rgb(255 255 255 / 0.14) 56%,
+    transparent 64%
+  );
+  filter: blur(0.5px);
+  mix-blend-mode: screen;
+  transform: translateX(-150%) skewX(-14deg);
+  animation: stl-rake 0.95s cubic-bezier(0.5, 0, 0.4, 1) 0.62s both;
+  pointer-events: none;
 }
 
-.cele-title {
-  margin-top: 18px;
-  font-size: 22px;
+.stl-rake-2 {
+  background: linear-gradient(100deg, transparent 42%, rgb(255 255 255 / 0.3) 50%, transparent 58%);
+  animation-delay: 0.78s;
+  animation-duration: 1.05s;
+}
+
+/* Light blooming off the face at the moment the balance reaches nothing. */
+.stl-bloom {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(60% 90% at 50% 50%, rgb(255 255 255 / 0.5), transparent 70%);
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: stl-bloom 0.8s ease-out 1.18s both;
+  pointer-events: none;
+}
+
+.stl-eyebrow {
+  margin: 26px 0 0;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  transition: color 0.45s ease;
+  animation: stl-up 0.5s ease-out 0.42s both;
+}
+
+.stl-eyebrow.is-clear { color: var(--color-good); }
+
+.stl-figure {
+  margin: 5px 0 0;
+  font-size: clamp(30px, 8vw, 38px);
   font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--color-good);
-  animation: rise 0.4s ease-out 0.45s both;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+  animation: stl-up 0.5s ease-out 0.5s both;
 }
 
-.cele-detail {
-  margin-top: 4px;
+.stl-card-line {
+  margin: 10px 0 0;
   font-size: 12px;
   color: var(--color-ink2);
-  animation: rise 0.4s ease-out 0.6s both;
+  animation: stl-up 0.5s ease-out 0.62s both;
 }
 
-.cele-burst {
-  position: absolute;
-  top: 45%;
-  left: 50%;
-  width: 0;
-  height: 0;
+.stl-dim { color: var(--color-muted); font-family: var(--font-plex-mono), ui-monospace, monospace; }
+
+.stl-detail {
+  margin: 3px 0 0;
+  font-size: 11px;
+  color: var(--color-muted);
+  animation: stl-up 0.5s ease-out 0.7s both;
 }
 
-.cele-bit {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 7px;
-  height: 11px;
-  border-radius: 2px;
-  background: hsl(var(--h) 85% 62%);
-  transform: rotate(var(--a)) translateY(0) rotate(0deg);
-  opacity: 0;
-  animation: cele-bit var(--t) cubic-bezier(0.2, 0.8, 0.3, 1) 0.28s both;
-}
-
-@keyframes cele-scrim {
+@keyframes stl-scrim {
   0% { opacity: 0; }
-  12%, 80% { opacity: 1; }
+  8%, 82% { opacity: 1; }
   100% { opacity: 0; }
 }
-@keyframes cele-card {
-  from { opacity: 0; transform: translateY(24px) scale(0.86) rotateX(18deg); }
+
+/* Falls in from above and behind, overshoots slightly, then two decaying
+   corrections settle it flat. Objects with mass do not stop dead. */
+@keyframes stl-land {
+  0% { opacity: 0; transform: translateY(-34px) translateZ(150px) rotateX(15deg) rotateZ(-3.5deg); }
+  30% { opacity: 1; }
+  58% { transform: translateY(5px) translateZ(0) rotateX(-3deg) rotateZ(0.8deg); }
+  76% { transform: translateY(-2px) translateZ(0) rotateX(1.2deg) rotateZ(-0.35deg); }
+  90% { transform: translateY(1px) translateZ(0) rotateX(-0.4deg) rotateZ(0.12deg); }
+  100% { opacity: 1; transform: translateY(0) translateZ(0) rotateX(0deg) rotateZ(0deg); }
+}
+
+@keyframes stl-shadow {
+  0% { opacity: 0; transform: scale(1.3) translateY(10px); filter: blur(24px); }
+  30% { opacity: 0.4; }
+  58% { opacity: 0.68; transform: scale(0.93); filter: blur(9px); }
+  100% { opacity: 0.5; transform: scale(1); filter: blur(14px); }
+}
+
+@keyframes stl-rake {
+  from { transform: translateX(-150%) skewX(-14deg); }
+  to { transform: translateX(165%) skewX(-14deg); }
+}
+
+@keyframes stl-bloom {
+  0% { opacity: 0; }
+  35% { opacity: 0.75; }
+  100% { opacity: 0; }
+}
+
+@keyframes stl-up {
+  from { opacity: 0; transform: translateY(9px); }
   to { opacity: 1; transform: none; }
 }
-@keyframes cele-stamp {
-  from { opacity: 0; transform: rotate(-12deg) scale(2.2); }
-  to { opacity: 1; transform: rotate(-12deg) scale(1); }
-}
-@keyframes cele-bit {
-  0% { opacity: 0; transform: rotate(var(--a)) translateY(0) rotate(0deg) scale(0.5); }
-  12% { opacity: 1; }
-  100% { opacity: 0; transform: rotate(var(--a)) translateY(calc(var(--d) * -1)) rotate(400deg) scale(1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .stl-scrim { animation: ai-fade-in 0.2s ease-out both; }
+  .stl-card, .stl-shadow, .stl-eyebrow, .stl-figure, .stl-card-line, .stl-detail { animation: none; }
+  .stl-rake, .stl-bloom { display: none; }
+  .stl-shadow { opacity: 0.5; }
 }
 
 /* ---------- Bill row clearing ---------- */
@@ -1769,9 +1830,6 @@ button:active:not(:disabled) {
 
 @media (prefers-reduced-motion: reduce) {
   .ai-scan-card, .ai-scan-grid, .ai-scan-beam, .ai-scan-corner, .ai-scan-motes span, .ai-ticker-row,
-  .cele-card, .cele-stamp, .cele-bit, .bill-clearing, .ai-change-row { animation: none !important; }
+  .bill-clearing, .ai-change-row { animation: none !important; }
   .ai-scan-beam { top: 50%; }
-  .cele-stamp-ring, .cele-stamp-check { stroke-dashoffset: 0; animation: none; }
-  .cele-bit { display: none; }
-  .cele-scrim { animation: ai-fade-in 0.2s ease-out both; }
 }

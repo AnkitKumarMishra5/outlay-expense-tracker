@@ -5,6 +5,13 @@ import { Range, rangeStart } from "./format";
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
+/** Demo bills are paid a couple of days early, and never in the future. */
+function settledOn(dueDay: string): string {
+  const due = Date.parse(`${dueDay}T00:00:00`) - 2 * 86_400_000;
+  const when = Math.min(due, Date.now());
+  return new Date(when).toISOString().slice(0, 10);
+}
+
 export function demoAnalytics(range: Range, cardIndex: number | null): Analytics {
   const start = rangeStart(range);
   const rows = DEMO_TXNS.filter(
@@ -111,7 +118,7 @@ export function demoAnalytics(range: Range, cardIndex: number | null): Analytics
       amount: d.amount,
       min_due: d.minDue,
       settled: d.settled,
-      paid_at: d.settled ? d.day : null,
+      paid_at: d.settled ? settledOn(d.day) : null,
       card_label: d.cardLabel,
       bank_id: d.bankId,
       last4: d.last4,

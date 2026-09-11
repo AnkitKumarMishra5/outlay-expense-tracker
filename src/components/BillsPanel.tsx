@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useToast } from "./Toasts";
-import { inr } from "@/lib/format";
+import { inr, localDay } from "@/lib/format";
 import { bankById } from "@/lib/banks";
 import { Analytics } from "@/lib/types";
 import { celebrate } from "@/lib/celebrate";
@@ -66,12 +66,11 @@ export default function BillsPanel({
   const current = [...cycle, ...carried];
   const open = current.filter((b) => !b.settled);
   const currentSettled = current.filter((b) => b.settled);
-  const settled = bills.filter((b) => b.settled);
   const overdue = open.filter((b) => b.day < now);
   const owed = open.reduce((a, b) => a + Number(b.amount ?? 0), 0);
   const overdueOwed = overdue.reduce((a, b) => a + Number(b.amount ?? 0), 0);
 
-  const queue = [...(showSettled ? settled : open)].sort((a, b) =>
+  const queue = [...(showSettled ? currentSettled : open)].sort((a, b) =>
     showSettled ? b.day.localeCompare(a.day) : a.day.localeCompare(b.day)
   );
 
@@ -84,7 +83,7 @@ export default function BillsPanel({
         kind: "settled",
         card: { bankId: b.bank_id, label: b.card_label, last4: b.last4 },
         amount: Number(b.amount ?? 0),
-        detail: `${b.card_label} •••• ${b.last4 ?? "????"}, was due ${b.day}`,
+        detail: `Was due ${b.day}`,
       });
     } else {
       play("unsettle");
@@ -120,7 +119,7 @@ export default function BillsPanel({
           onClick={() => setShowSettled((v) => !v)}
           className="ml-auto rounded-md border border-line px-2 py-1 text-[11px] text-ink2 transition-colors hover:border-muted hover:text-ink"
         >
-          {showSettled ? `Show ${open.length} outstanding` : `Show ${settled.length} settled`}
+          {showSettled ? `Show ${open.length} outstanding` : `Show ${currentSettled.length} settled`}
         </button>
       </div>
 
@@ -146,7 +145,7 @@ export default function BillsPanel({
                 <span className="text-muted">•••• {b.last4 ?? "????"}</span>
               </span>
               <span className={`hidden whitespace-nowrap sm:inline ${late ? "text-bad" : "text-muted"}`}>
-                {b.settled ? `settled · due ${b.day}` : relative(b.day, now)}
+                {b.settled ? (b.paid_at ? `settled ${localDay(b.paid_at)} · due ${b.day}` : `settled · due ${b.day}`) : relative(b.day, now)}
               </span>
               <span className="whitespace-nowrap tabular text-ink">{inr(Number(b.amount ?? 0))}</span>
               {onSettle && !credit && (
@@ -172,7 +171,7 @@ export default function BillsPanel({
         <p className="mt-2 text-[11px] text-muted">{queue.length - 8} more on the statements page.</p>
       )}
       {queue.length === 0 && (
-        <p className="mt-2 text-xs text-muted">{showSettled ? "Nothing settled yet." : "Nothing outstanding."}</p>
+        <p className="mt-2 text-xs text-muted">{showSettled ? "Nothing settled this cycle yet." : "Nothing outstanding."}</p>
       )}
     </div>
   );
