@@ -2,6 +2,8 @@
 
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
+import { setCardholder } from "@/lib/cardholder";
+import { SAMPLE_IDENTITY } from "@/lib/passwords";
 import DashboardView from "@/components/DashboardView";
 import FindingIllustrations from "@/components/FindingIllustrations";
 import { INVITE_MAILTO } from "@/lib/developer";
@@ -28,6 +30,8 @@ const STEPS = [
     body: "Spend by card, category and month. A calendar carrying both daily spend and every payment due. Fees itemised, because those are the ones worth arguing about.",
   },
 ];
+
+setCardholder(SAMPLE_IDENTITY.name);
 
 export default function Landing() {
   const [range, setRange] = useState<Range>("3m");

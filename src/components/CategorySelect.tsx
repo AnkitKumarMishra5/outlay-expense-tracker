@@ -1,5 +1,6 @@
 "use client";
 
+import { play } from "@/lib/sound";
 import { CATEGORIES } from "@/lib/categories";
 import { categoryColor, useChartTokens } from "@/lib/chartTokens";
 
@@ -25,7 +26,10 @@ export default function CategorySelect({
       <select
         value={value}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          play("tick");
+          onChange(e.target.value);
+        }}
         aria-label={label}
         className="cat-field"
       >

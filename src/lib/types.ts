@@ -72,6 +72,7 @@ export interface Analytics {
   totals: { debits: number; credits: number; fees: number; txns: number };
   byMonth: { month: string; debits: number }[];
   byCategory: { category: string; total: number }[];
+  byMerchant: { merchant: string; total: number; n: number; category: string }[];
   byCard: { card_id: string; card_label: string; bank_id: string; last4: string | null; debits: number; txns: number; next_due: string | null; next_due_amount: number | null }[];
   recent: { id: string; txn_date: string; description: string; amount: number; type: string; category: string; is_fee: number }[];
   byDay: { day: string; debits: number; txns: number }[];

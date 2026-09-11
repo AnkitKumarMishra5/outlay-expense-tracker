@@ -237,8 +237,8 @@ The app returns 503 on every route until all three are present, so a half-config
 | Encryption | AES-256-GCM, per-account keys derived from one master key |
 | PDF | pdf.js (`pdfjs-dist/legacy`), unlocked and read in memory |
 | Charts | Recharts |
-| Motion | CSS keyframes and the Web Animations API, no animation library. A card under a reading beam while the model works, a stamped check and confetti when a bill clears |
-| Sound | Short cues synthesised with the Web Audio API, no audio files: a register bell on settle, a scan sweep and a sparkle around AI review, ticks and whooshes elsewhere. One toggle in the nav |
+| Motion | Motion (motion.dev) for spring physics and layout animation, plus CSS keyframes. A card under a reading beam while the model works; the card lands and the balance runs down to nothing when a bill clears |
+| Sound | Sixteen cues synthesised with the Web Audio API, no audio files: a bell chord on settle, a riffle when the deck reorders, friction when a card slides, a scan sweep around AI review. Levels were set by rendering each cue offline and measuring, so they land between -5 and -12 dBFS through a limiter. One toggle in the nav |
 | AI | OpenAI `gpt-4o-mini` for category review only, optional, capped at two runs per card per month |
 | Hosting | Vercel and Neon, both free tier |
 

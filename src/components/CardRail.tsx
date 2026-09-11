@@ -1,6 +1,7 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { LayoutGroup, motion } from "motion/react";
 import CreditCard from "./CreditCard";
 import CardBack from "./CardBack";
 import ConfirmDelete from "./ConfirmDelete";
@@ -50,6 +51,9 @@ function dueLabel(day: string) {
   return `due ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
+/** One spring, so every card in the rail moves with the same weight. */
+const SPRING = { type: "spring" as const, stiffness: 420, damping: 38, mass: 0.9 };
+
 const reduced = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -72,8 +76,8 @@ export default function CardRail({
   const [sort, setSort] = useState<SortMode>("spend");
   const [flipped, setFlipped] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<CardRow | null>(null);
-  const prevRects = useRef(new Map<string, DOMRect>());
-  const flipPending = useRef(false);
+  /** Card ids most recently fronted, newest first. Drives the order behind the hero. */
+  const [recent, setRecent] = useState<string[]>([]);
   const rowRefs = useRef(new Map<string, HTMLLIElement>());
   const active = cards.find((c) => c.id === activeId) ?? null;
 
@@ -86,10 +90,21 @@ export default function CardRail({
 
   const hero = active ?? topCard;
 
-  const rest = useMemo(
-    () => (hero ? cards.filter((c) => c.id !== hero.id).slice(0, 2) : []),
-    [cards, hero]
-  );
+  // The deck remembers. Whatever was on top a moment ago is the card directly
+  // behind the one that replaced it, the way a real deck would sit.
+  const rest = useMemo(() => {
+    if (!hero) return [];
+    const behind = new Map(cards.filter((c) => c.id !== hero.id).map((c) => [c.id, c]));
+    const ordered: CardRow[] = [];
+    for (const id of recent) {
+      const card = behind.get(id);
+      if (card) {
+        ordered.push(card);
+        behind.delete(id);
+      }
+    }
+    return [...ordered, ...behind.values()].slice(0, 2);
+  }, [cards, hero, recent]);
 
   const peak = useMemo(
     () => Math.max(1, ...cards.map((c) => cardStats?.[c.id]?.debits ?? 0)),
@@ -133,52 +148,128 @@ export default function CardRail({
     return copy;
   }, [cards, cardStats, query, sort]);
 
-  useLayoutEffect(() => {
-    const shouldAnimate = flipPending.current && !reduced();
-    flipPending.current = false;
-    const moved: { el: HTMLLIElement; dy: number }[] = [];
-    visible.forEach((c) => {
-      const el = rowRefs.current.get(c.id);
-      const before = prevRects.current.get(c.id);
-      if (!el || !before) return;
-      const dy = before.top - el.getBoundingClientRect().top;
-      if (Math.abs(dy) > 1) moved.push({ el, dy });
-    });
-    if (shouldAnimate)
-      moved.forEach(({ el, dy }, i) => {
-        el.animate(
-          [
-            { transform: `translateY(${dy}px)`, opacity: 0.55 },
-            { transform: `translateY(${dy * 0.12}px)`, opacity: 1, offset: 0.7 },
-            { transform: "none", opacity: 1 },
-          ],
-          { duration: 460, easing: "cubic-bezier(0.22, 1, 0.36, 1)", delay: Math.min(i, 12) * 22 }
-        );
-      });
-    const next = new Map<string, DOMRect>();
-    visible.forEach((c) => {
-      const el = rowRefs.current.get(c.id);
-      if (el) next.set(c.id, el.getBoundingClientRect());
-    });
-    prevRects.current = next;
-  }, [visible]);
-
   function changeSort(nextSort: SortMode) {
     if (nextSort === sort) return;
-    const snapshot = new Map<string, DOMRect>();
-    visible.forEach((c) => {
-      const el = rowRefs.current.get(c.id);
-      if (el) snapshot.set(c.id, el.getBoundingClientRect());
-    });
-    prevRects.current = snapshot;
-    flipPending.current = true;
+    play("riffle");
     setSort(nextSort);
+  }
+
+  /** Remember what was on top before it is replaced. */
+  function remember(leaving: string | undefined | null) {
+    if (!leaving) return;
+    setRecent((r) => [leaving, ...r.filter((x) => x !== leaving)]);
   }
 
   function pick(id: string) {
     setFlipped(false);
-    play("select");
-    onSelect(id === activeId ? null : id);
+    const next = id === activeId ? null : id;
+    if (hero && hero.id !== id) {
+      remember(hero.id);
+      play("slide");
+    } else {
+      play("select");
+    }
+    onSelect(next);
+  }
+
+  function showAll() {
+    remember(active?.id);
+    play("slide");
+    onSelect(null);
+  }
+
+  // Grouping by issuer only makes sense when that is the order, and only when
+  // there is enough on screen for the stacking to buy anything.
+  const grouped = sort === "bank" && !query.trim() && visible.length > 4 && !reduced();
+  const groups = useMemo(() => {
+    if (!grouped) return [];
+    const byBank = new Map<string, CardRow[]>();
+    for (const c of visible) {
+      const list = byBank.get(c.bank_id);
+      if (list) list.push(c);
+      else byBank.set(c.bank_id, [c]);
+    }
+    return [...byBank.entries()].map(([bankId, rows]) => ({
+      bankId,
+      rows,
+      spend: rows.reduce((a, c) => a + (cardStats?.[c.id]?.debits ?? 0), 0),
+    }));
+  }, [grouped, visible, cardStats]);
+
+  /** One card spine, shared by the flat list and the grouped one. */
+  function renderRow(c: CardRow, i: number) {
+    const bank = bankById(c.bank_id);
+    const stat = cardStats?.[c.id];
+    const spend = stat?.debits ?? 0;
+    const isActive = c.id === activeId;
+    const due = stat?.nextDue ?? null;
+    const left = due ? daysUntil(due) : null;
+    const dueTone =
+      left === null ? "" : left < 0 ? "text-bad font-medium" : left <= 2 ? "text-bad" : left <= 7 ? "text-warn" : "text-ink2";
+    const txnText = stat?.txns ? `${stat.txns} txn${stat.txns === 1 ? "" : "s"}` : "no spend";
+    const share = peak > 0 ? Math.round((spend / peak) * 100) : 0;
+    const title = [
+      spend > 0 ? `${inr(spend)} spent, ${share}% of your highest card` : "No spend this period",
+      spend > 0 ? txnText : null,
+      due ? `${stat?.nextDueAmount != null ? inr(stat.nextDueAmount) : "Payment"} ${dueLabel(due)}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return (
+      <motion.li
+        key={c.id}
+        layout
+        ref={(el: HTMLLIElement | null) => {
+          if (el) rowRefs.current.set(c.id, el);
+          else rowRefs.current.delete(c.id);
+        }}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={SPRING}
+        style={{ "--i": i } as React.CSSProperties}
+      >
+            <button
+              onClick={() => pick(c.id)}
+              aria-pressed={isActive}
+              className={`spine ${isActive ? "spine-on" : ""}`}
+              style={
+                {
+                  "--edge": bank.color,
+                  "--edge2": bank.c2,
+                  "--pct": Math.max(0.02, spend / peak),
+                } as React.CSSProperties
+              }
+              title={title}
+            >
+              <span className="spine-edge" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="truncate text-[13px] font-medium text-ink">{c.card_label}</span>
+                  <span className="tabular shrink-0 text-[12px] text-ink2">{spend > 0 ? inr(spend) : "—"}</span>
+                </span>
+                <span className="mt-0.5 flex items-center justify-between gap-2">
+                  <span className="truncate text-[10px] uppercase tracking-wider text-muted">
+                    {bank.short} · •••• {c.last4 ?? "????"}
+                  </span>
+                  {due ? (
+                    <span className={`shrink-0 text-[10px] ${dueTone}`}>
+                      {left !== null && left <= 7 && <span className="spine-due-dot" aria-hidden />}
+                      {dueLabel(due)}
+                      {stat?.nextDueAmount != null && (
+                        <span className="tabular text-muted"> · {inr(stat.nextDueAmount)}</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="shrink-0 text-[10px] text-muted">{txnText}</span>
+                  )}
+                </span>
+                <span className="spine-track" aria-hidden>
+                  <span className="spine-fill" />
+                </span>
+              </span>
+            </button>
+      </motion.li>
+    );
   }
 
   return (
@@ -200,7 +291,7 @@ export default function CardRail({
         </h2>
         {active && (
           <span className="flex items-center gap-1">
-            <button onClick={() => onSelect(null)} className="rounded-md px-2 py-1 text-xs text-accent hover:bg-accent/10">
+            <button onClick={showAll} className="rounded-md px-2 py-1 text-xs text-accent hover:bg-accent/10">
               Show all
             </button>
             <button
@@ -304,78 +395,26 @@ export default function CardRail({
       ) : visible.length === 0 ? (
         <p className="py-6 text-center text-xs text-muted">No cards match “{query}”.</p>
       ) : (
-        <ul className="max-h-[420px] space-y-1 overflow-y-auto overflow-x-hidden pr-1">
-          {visible.map((c, i) => {
-            const bank = bankById(c.bank_id);
-            const stat = cardStats?.[c.id];
-            const spend = stat?.debits ?? 0;
-            const isActive = c.id === activeId;
-            const due = stat?.nextDue ?? null;
-            const left = due ? daysUntil(due) : null;
-            const dueTone = left === null ? "" : left < 0 ? "text-bad font-medium" : left <= 2 ? "text-bad" : left <= 7 ? "text-warn" : "text-ink2";
-            const txnText = stat?.txns ? `${stat.txns} txn${stat.txns === 1 ? "" : "s"}` : "no spend";
-            const share = peak > 0 ? Math.round((spend / peak) * 100) : 0;
-            const title = [
-              spend > 0 ? `${inr(spend)} spent, ${share}% of your highest card` : "No spend this period",
-              spend > 0 ? txnText : null,
-              due ? `${stat?.nextDueAmount != null ? inr(stat.nextDueAmount) : "Payment"} ${dueLabel(due)}` : null,
-            ]
-              .filter(Boolean)
-              .join(" · ");
-            return (
-              <li
-                key={c.id}
-                ref={(el) => {
-                  if (el) rowRefs.current.set(c.id, el);
-                  else rowRefs.current.delete(c.id);
-                }}
-                className="spine-in"
-                style={{ "--d": `${Math.min(i, 14) * 40}ms` } as React.CSSProperties}
-              >
-                <button
-                  onClick={() => pick(c.id)}
-                  aria-pressed={isActive}
-                  className={`spine ${isActive ? "spine-on" : ""}`}
-                  style={
-                    {
-                      "--edge": bank.color,
-                      "--edge2": bank.c2,
-                      "--pct": Math.max(0.02, spend / peak),
-                    } as React.CSSProperties
-                  }
-                  title={title}
-                >
-                  <span className="spine-edge" aria-hidden />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="truncate text-[13px] font-medium text-ink">{c.card_label}</span>
-                      <span className="tabular shrink-0 text-[12px] text-ink2">{spend > 0 ? inr(spend) : "—"}</span>
-                    </span>
-                    <span className="mt-0.5 flex items-center justify-between gap-2">
-                      <span className="truncate text-[10px] uppercase tracking-wider text-muted">
-                        {bank.short} · •••• {c.last4 ?? "????"}
-                      </span>
-                      {due ? (
-                        <span className={`shrink-0 text-[10px] ${dueTone}`}>
-                          {left !== null && left <= 7 && <span className="spine-due-dot" aria-hidden />}
-                          {dueLabel(due)}
-                          {stat?.nextDueAmount != null && (
-                            <span className="tabular text-muted"> · {inr(stat.nextDueAmount)}</span>
-                          )}
-                        </span>
-                      ) : (
-                        <span className="shrink-0 text-[10px] text-muted">{txnText}</span>
-                      )}
-                    </span>
-                    <span className="spine-track" aria-hidden>
-                      <span className="spine-fill" />
-                    </span>
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <LayoutGroup>
+          <ul className="rail-list space-y-1 overflow-y-auto overflow-x-hidden pr-1">
+            {grouped
+              ? groups.map((g) => {
+                  const bank = bankById(g.bankId);
+                  return (
+                    <motion.li key={`bank-${g.bankId}`} layout transition={SPRING} className="bank-group">
+                      <p className="bank-head">
+                        <span className="bank-chip" style={{ background: bank.color }} aria-hidden />
+                        <span className="bank-name">{bank.name}</span>
+                        <span className="bank-count">{g.rows.length}</span>
+                        <span className="bank-spend tabular">{g.spend > 0 ? inr(g.spend) : "—"}</span>
+                      </p>
+                      <ul className="bank-fan">{g.rows.map((c, i) => renderRow(c, i))}</ul>
+                    </motion.li>
+                  );
+                })
+            : visible.map((c, i) => renderRow(c, i))}
+          </ul>
+        </LayoutGroup>
       )}
       {cards.length > 0 && (
         <p className="mt-3 text-center text-[11px] text-muted">

@@ -2,6 +2,7 @@
 
 import { useRef } from "react";
 import { bankById } from "@/lib/banks";
+import { formatHolder, useCardholder } from "@/lib/cardholder";
 
 export default function CreditCard({
   bankId,
@@ -10,6 +11,7 @@ export default function CreditCard({
   size = "md",
   tilt = false,
   className = "",
+  holder,
 }: {
   bankId: string;
   label: string;
@@ -17,8 +19,12 @@ export default function CreditCard({
   size?: "sm" | "md";
   tilt?: boolean;
   className?: string;
+  /** Overrides the signed-in cardholder, for previews and the public demo. */
+  holder?: string | null;
 }) {
   const bank = bankById(bankId);
+  const signedIn = useCardholder();
+  const name = formatHolder(holder ?? signedIn ?? "");
   const ref = useRef<HTMLDivElement>(null);
   const fg = bank.fg ?? "#ffffff";
   const sub = bank.fg ? "rgba(26,26,25,0.65)" : "rgba(255,255,255,0.72)";
@@ -92,9 +98,19 @@ export default function CreditCard({
               <span style={{ opacity: 0.62 }}>••••&nbsp;••••&nbsp;••••</span>
               <span className="cc-last4">&nbsp;{last4 ?? "0000"}</span>
             </p>
-            <p className="cc-label emboss mt-2.5 min-w-0 truncate text-[12px] font-bold uppercase tracking-[0.13em]">
-              {label}
-            </p>
+            <div className="mt-2.5 flex items-end justify-between gap-3">
+              <p className="cc-label emboss min-w-0 truncate text-[12px] font-bold uppercase tracking-[0.13em]">
+                {name || label}
+              </p>
+              {name && (
+                <p
+                  className="min-w-0 shrink-0 truncate text-[9px] font-semibold uppercase tracking-[0.14em]"
+                  style={{ color: sub, maxWidth: "42%" }}
+                >
+                  {label}
+                </p>
+              )}
+            </div>
           </div>
         </>
       ) : (

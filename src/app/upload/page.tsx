@@ -425,7 +425,10 @@ export default function Upload() {
                       </span>
                     )}
                     <button
-                      onClick={() => setItems((prev) => prev.filter((x) => x.id !== item.id))}
+                      onClick={() => {
+                        play("delete");
+                        setItems((prev) => prev.filter((x) => x.id !== item.id));
+                      }}
                       aria-label={`Remove ${item.file.name}`}
                       className="rounded p-1 text-muted hover:text-bad"
                     >

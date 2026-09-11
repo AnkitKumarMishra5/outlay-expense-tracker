@@ -1,5 +1,6 @@
 "use client";
 
+import { play } from "@/lib/sound";
 import { useState } from "react";
 import {
   BUILTIN_PATTERNS,
@@ -164,7 +165,10 @@ export default function PatternBuilder({
                 <span className="w-24 shrink-0 text-[10px] uppercase tracking-wider text-muted">{g.label}</span>
                 <div className="flex flex-wrap gap-1.5">
                   {PATTERN_TOKENS.filter((t) => t.group === g.id).map((t) => (
-                    <button key={t.id} title={t.hint} onClick={() => setDraft((d) => `${d}{${t.id}}`)} className={chip}>
+                    <button key={t.id} title={t.hint} onClick={() => {
+                      play("tick");
+                      setDraft((d) => `${d}{${t.id}}`);
+                    }} className={chip}>
                       {t.label}
                     </button>
                   ))}
@@ -205,7 +209,10 @@ export default function PatternBuilder({
           </div>
 
           <div className="mt-2 flex flex-wrap gap-2">
-            <button onClick={() => setDraft("")} disabled={!draft} className={`${chip} disabled:opacity-40`}>
+            <button onClick={() => {
+                play("delete");
+                setDraft("");
+              }} disabled={!draft} className={`${chip} disabled:opacity-40`}>
               Clear
             </button>
             <button

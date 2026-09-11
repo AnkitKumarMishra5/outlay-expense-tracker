@@ -1833,3 +1833,223 @@ button:active:not(:disabled) {
   .bill-clearing, .ai-change-row { animation: none !important; }
   .ai-scan-beam { top: 50%; }
 }
+
+/* ---------- Cards grouped by issuer ---------- */
+
+.bank-group + .bank-group { margin-top: 12px; }
+
+/* A quiet divider, not a heading: it should not out-shout the cards under it. */
+.bank-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 5px;
+  padding: 0 2px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.bank-chip {
+  width: 3px;
+  height: 12px;
+  flex: none;
+  border-radius: 999px;
+}
+
+.bank-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-ink2);
+}
+
+.bank-count {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 1px solid var(--color-line);
+  font-size: 9px;
+  line-height: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bank-spend {
+  margin-left: auto;
+  flex: none;
+  letter-spacing: 0.02em;
+  color: var(--color-ink2);
+}
+
+.bank-fan {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Hovering a stack lifts its cards in sequence, the way a thumb runs down a
+   deck. Nothing is hidden to begin with, so this only ever adds. */
+.bank-fan > li {
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: calc(var(--i, 0) * 34ms);
+}
+
+.bank-fan:hover > li,
+.bank-fan:focus-within > li {
+  transform: translateX(4px);
+}
+
+.bank-fan:hover > li:first-child,
+.bank-fan:focus-within > li:first-child {
+  transform: translateX(4px) translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bank-fan > li { transition: none; }
+  .bank-fan:hover > li,
+  .bank-fan:focus-within > li { transform: none; }
+}
+
+/* The rail scrolls rather than pushing the dashboard down the page. Grouped by
+   issuer it carries dividers too, so it gets more room before it has to. */
+.rail-list {
+  max-height: 520px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+
+.rail-list::-webkit-scrollbar { width: 6px; }
+.rail-list::-webkit-scrollbar-track { background: transparent; }
+.rail-list::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 999px;
+}
+.rail-list:hover::-webkit-scrollbar-thumb { background: var(--color-muted); }
+
+/* ---------- Nothing left to pay ---------- */
+
+.allclear {
+  display: grid;
+  justify-items: center;
+  padding: 6px 0 2px;
+  text-align: center;
+}
+
+/*
+ * The user's own cards, fanned face-up and tipped back.
+ *
+ * The faces are scaled with `zoom`, not `transform: scale`. Transform leaves
+ * the layout box at full size, so the text below it landed on top of the
+ * cards and the container could not be sized to what you actually see. Zoom
+ * scales the box and the type together, so the fan occupies exactly the room
+ * it looks like it occupies.
+ */
+.allclear-fan {
+  position: relative;
+  width: 100%;
+  height: 152px;
+  perspective: 900px;
+}
+
+.allclear-tilt {
+  position: absolute;
+  inset: 0;
+  transform: rotateX(11deg);
+  transform-style: preserve-3d;
+}
+
+.allclear-card {
+  position: absolute;
+  left: 50%;
+  bottom: 34px;
+  width: 148px;
+  height: 94px;
+  margin-left: -74px;
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 9px 13px rgb(0 0 0 / 0.5));
+}
+
+.allclear-face {
+  display: block;
+  width: 320px;
+  zoom: 0.4625;
+}
+
+/* The surface the fan rests on, so it sits rather than floats. */
+.allclear-floor {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  width: 176px;
+  height: 22px;
+  margin-left: -88px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(0 0 0 / 0.5), transparent 74%);
+  filter: blur(6px);
+  animation: rise 0.5s ease-out 0.2s both;
+}
+
+/* One pass of light over the fan once it has landed, then never again. */
+.allclear-sweep {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 42%, rgb(255 255 255 / 0.24) 50%, transparent 58%);
+  mix-blend-mode: screen;
+  transform: translateX(-140%) skewX(-12deg);
+  animation: allclear-sweep 1.1s cubic-bezier(0.45, 0, 0.4, 1) 0.75s 1 both;
+}
+
+.allclear-title {
+  margin: 12px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-good);
+  animation: rise 0.45s ease-out 0.5s both;
+}
+
+.allclear-sub {
+  margin: 3px 0 0;
+  max-width: 34ch;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--color-ink2);
+  animation: rise 0.45s ease-out 0.6s both;
+}
+
+@keyframes allclear-sweep {
+  from { transform: translateX(-140%) skewX(-12deg); }
+  to { transform: translateX(150%) skewX(-12deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .allclear-sweep { display: none; }
+  .allclear-title, .allclear-sub { animation: none; }
+}
+
+/* ---------- Top merchants ---------- */
+
+.merch-track {
+  position: relative;
+  flex: 1;
+  height: 5px;
+  min-width: 0;
+  border-radius: 999px;
+  background: var(--color-line);
+  overflow: hidden;
+}
+
+.merch-fill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  transform-origin: left center;
+}

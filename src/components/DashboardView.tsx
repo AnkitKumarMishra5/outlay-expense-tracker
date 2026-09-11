@@ -10,6 +10,7 @@ import TxnTable from "@/components/TxnTable";
 import SpendCalendar from "@/components/SpendCalendar";
 import BillsPanel from "@/components/BillsPanel";
 import Subscriptions from "@/components/Subscriptions";
+import TopMerchants from "@/components/TopMerchants";
 import CountUp from "@/components/CountUp";
 import { inr, Range, RANGE_LABELS } from "@/lib/format";
 import { Analytics, CardRow } from "@/lib/types";
@@ -110,17 +111,24 @@ export default function DashboardView({
             ))}
           </div>
 
-          <BillsPanel bills={data.dues ?? []} onSettle={onSettle} />
-
-          <Subscriptions subs={data.subscriptions ?? []} />
+          <BillsPanel bills={data.dues ?? []} onSettle={onSettle} cards={cards} />
 
           <div
             className="grid min-w-0 grid-cols-1 gap-4 transition-opacity duration-300 lg:grid-cols-2"
             style={{ opacity: dimmed ? 0.45 : 1 }}
           >
-            <div className="card rise min-w-0 p-5" style={{ "--d": "160ms" } as React.CSSProperties}>
-              <h2 className="mb-4 text-sm font-medium text-ink2">Spend trend</h2>
-              <TrendChart key={viewKey} data={data.byMonth.map((m) => ({ month: m.month, debits: Number(m.debits) }))} />
+            <div className="grid min-w-0 gap-4">
+              <div className="card rise min-w-0 p-5" style={{ "--d": "160ms" } as React.CSSProperties}>
+                <h2 className="mb-4 text-sm font-medium text-ink2">Spend trend</h2>
+                <TrendChart key={viewKey} data={data.byMonth.map((m) => ({ month: m.month, debits: Number(m.debits) }))} />
+              </div>
+              <div className="card rise min-w-0 p-5" style={{ "--d": "200ms" } as React.CSSProperties}>
+                <div className="mb-4 flex items-baseline justify-between gap-3">
+                  <h2 className="text-sm font-medium text-ink2">Where it went</h2>
+                  <span className="text-[11px] text-muted">by merchant</span>
+                </div>
+                <TopMerchants key={viewKey} rows={data.byMerchant ?? []} />
+              </div>
             </div>
             <div className="card rise min-w-0 p-5" style={{ "--d": "220ms" } as React.CSSProperties}>
               <h2 className="mb-4 text-sm font-medium text-ink2">Category split</h2>
@@ -132,7 +140,7 @@ export default function DashboardView({
             <h2 className="mb-4 text-sm font-medium text-ink2">Spend by card</h2>
             <CardSpendBars
               key={viewKey}
-              data={data.byCard.map((d) => ({ ...d, debits: Number(d.debits) })).filter((d) => d.debits > 0)}
+              data={data.byCard.map((d) => ({ ...d, debits: Number(d.debits), txns: Number(d.txns) })).filter((d) => d.debits > 0)}
               colorIndex={Object.fromEntries(cards.map((c, i) => [c.id, i]))}
             />
           </div>
@@ -151,6 +159,8 @@ export default function DashboardView({
             </div>
             <TxnTable txns={data.recent} editable={!demo} onChanged={onTxnChanged} />
           </div>
+
+          <Subscriptions subs={data.subscriptions ?? []} />
 
           <div className="card rise min-w-0 p-5" style={{ "--d": "400ms" } as React.CSSProperties}>
             <h2 className="mb-4 text-sm font-medium text-ink2">Calendar</h2>

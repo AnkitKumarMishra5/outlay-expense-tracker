@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
     }))
   );
 
-  const [totals, byMonth, byCategory, byCard, recent, byDay, dayCards, dues] = await Promise.all([
+  const [totals, byMonth, byCategory, byMerchant, byCard, recent, byDay, dayCards, dues] = await Promise.all([
     c.execute(
       `SELECT
          COALESCE(SUM(CASE WHEN type='debit' THEN amount END), 0) AS debits,
@@ -80,6 +80,21 @@ export async function GET(req: NextRequest) {
       `SELECT category, SUM(amount) AS total, COUNT(*)::int AS n
        FROM transactions ${W} AND type='debit' AND category != 'Payments & Refunds'
        GROUP BY category ORDER BY total DESC`,
+      args
+    ),
+    c.execute(
+      // Merchants, not categories. "Shopping" does not tell you it was Amazon.
+      // Descriptions carry reference numbers and city names, so they are
+      // trimmed to their leading words before grouping.
+      `SELECT merchant, SUM(amount) AS total, COUNT(*)::int AS n,
+              (ARRAY_AGG(category ORDER BY amount DESC))[1] AS category
+         FROM (
+           SELECT amount, category,
+                  UPPER(ARRAY_TO_STRING((STRING_TO_ARRAY(REGEXP_REPLACE(description, '[^A-Za-z ]+', ' ', 'g'), ' '))[1:2], ' ')) AS merchant
+             FROM transactions ${W} AND type='debit' AND category != 'Payments & Refunds'
+         ) m
+        WHERE LENGTH(TRIM(merchant)) > 2
+        GROUP BY merchant ORDER BY total DESC LIMIT 8`,
       args
     ),
     c.execute(
@@ -143,6 +158,7 @@ export async function GET(req: NextRequest) {
     totals: totals.rows[0],
     byMonth: byMonth.rows,
     byCategory: byCategory.rows,
+    byMerchant: byMerchant.rows,
     byCard: reveal(byCard.rows),
     subscriptions,
     recent: recent.rows,

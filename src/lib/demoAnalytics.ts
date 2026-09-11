@@ -23,6 +23,7 @@ export function demoAnalytics(range: Range, cardIndex: number | null): Analytics
 
   const byMonth = new Map<string, number>();
   const byCategory = new Map<string, number>();
+  const byMerchant = new Map<string, { total: number; n: number; category: string }>();
   const byDay = new Map<string, { debits: number; txns: number }>();
   const dayCard = new Map<string, { debits: number; txns: number }>();
 
@@ -31,6 +32,11 @@ export function demoAnalytics(range: Range, cardIndex: number | null): Analytics
     byMonth.set(month, (byMonth.get(month) ?? 0) + t.amount);
     if (t.category !== "Payments & Refunds") {
       byCategory.set(t.category, (byCategory.get(t.category) ?? 0) + t.amount);
+      const name = t.desc.replace(/[^A-Za-z ]+/g, " ").trim().split(/\s+/).slice(0, 2).join(" ").toUpperCase();
+      if (name.length > 2) {
+        const m = byMerchant.get(name) ?? { total: 0, n: 0, category: t.category };
+        byMerchant.set(name, { total: m.total + t.amount, n: m.n + 1, category: m.category });
+      }
     }
     const day = byDay.get(t.date) ?? { debits: 0, txns: 0 };
     byDay.set(t.date, { debits: day.debits + t.amount, txns: day.txns + 1 });
@@ -80,6 +86,10 @@ export function demoAnalytics(range: Range, cardIndex: number | null): Analytics
       txns: rows.length,
     },
     byMonth: [...byMonth.entries()].sort().map(([month, d]) => ({ month, debits: round(d) })),
+    byMerchant: [...byMerchant.entries()]
+      .map(([merchant, v]) => ({ merchant, total: v.total, n: v.n, category: v.category }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8),
     byCategory: [...byCategory.entries()]
       .map(([category, total]) => ({ category, total: round(total) }))
       .sort((a, b) => b.total - a.total),
