@@ -44,3 +44,13 @@ export const monthLabel = (ym: string) => {
 export function isSettled(paidAt: string | null | undefined, totalDue: number | null | undefined): boolean {
   return Boolean(paidAt) || totalDue == null || totalDue <= 0;
 }
+
+/**
+ * An ISO timestamp as the calendar day it was where the reader is. Slicing the
+ * string instead gives the UTC day, which in IST is yesterday until 05:30.
+ */
+export function localDay(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA").format(d);
+}

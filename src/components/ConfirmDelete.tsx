@@ -1,5 +1,6 @@
 "use client";
 
+import { play } from "@/lib/sound";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import BankBadge from "./BankBadge";
@@ -54,6 +55,7 @@ export default function ConfirmDelete({
       setError("Could not remove that card.");
       return;
     }
+    play("delete");
     onDeleted();
   }
 

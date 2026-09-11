@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { useToast } from "./Toasts";
+import { celebrate } from "@/lib/celebrate";
+import { localDay } from "@/lib/format";
+import { play } from "@/lib/sound";
 
 function daysUntil(day: string): number {
   const target = new Date(`${day}T00:00:00`).getTime();
@@ -16,6 +19,7 @@ export default function PaidToggle({
   totalDue,
   onChanged,
   compact = false,
+  card,
 }: {
   statementId: string;
   paidAt: string | null;
@@ -23,6 +27,8 @@ export default function PaidToggle({
   totalDue?: number | null;
   onChanged: () => void;
   compact?: boolean;
+  /** Shown in the flourish when the bill is settled. */
+  card?: { bankId: string; label: string; last4?: string | null };
 }) {
   const [busy, setBusy] = useState(false);
   const toast = useToast();
@@ -38,9 +44,12 @@ export default function PaidToggle({
     });
     setBusy(false);
     if (res.ok) {
-      toast.push(paid ? "Marked as not settled" : "Marked as settled", {
-        tone: paid ? "info" : "good",
-      });
+      if (paid) {
+        play("unsettle");
+        toast.push("Back in what is owed", { tone: "info" });
+      } else {
+        celebrate({ kind: "settled", card, amount: totalDue ?? null, detail: dueDate ? `Was due ${dueDate}` : undefined });
+      }
       onChanged();
     } else {
       toast.push("Could not update this statement", { tone: "bad" });
@@ -51,7 +60,7 @@ export default function PaidToggle({
   const overdue = !paid && !nothingOwed && days !== null && days < 0;
 
   const state = paid
-    ? { text: `Settled${paidAt ? ` on ${paidAt.slice(0, 10)}` : ""}`, tone: "text-good border-good/40 bg-good/10" }
+    ? { text: `Settled${paidAt ? ` on ${localDay(paidAt)}` : ""}`, tone: "text-good border-good/40 bg-good/10" }
     : nothingOwed
       ? { text: "Settled, nothing was owed", tone: "text-good border-good/40 bg-good/10" }
       : overdue

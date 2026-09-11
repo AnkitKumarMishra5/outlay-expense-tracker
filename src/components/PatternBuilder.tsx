@@ -1,7 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { PATTERN_TOKENS, SAMPLE_IDENTITY, describePattern, renderPattern, sampleFor } from "@/lib/passwords";
+import {
+  BUILTIN_PATTERNS,
+  PATTERN_GROUPS,
+  PATTERN_TOKENS,
+  SAMPLE_IDENTITY,
+  describePattern,
+  isBuiltinPattern,
+  renderPattern,
+  sampleFor,
+} from "@/lib/passwords";
 
 export interface SavedPattern {
   template: string;
@@ -32,6 +41,9 @@ export default function PatternBuilder({
   }
 
   const full = patterns.length >= 10;
+  const duplicateOfBuiltin = Boolean(draft) && isBuiltinPattern(draft);
+  const sample = (template: string) =>
+    renderPattern(template, SAMPLE_IDENTITY.name, SAMPLE_IDENTITY.dob, SAMPLE_IDENTITY.last4, SAMPLE_IDENTITY.first4);
 
   const chip = "rounded-md border border-line px-2 py-1 text-[11px] text-ink2 hover:border-accent hover:text-accent";
 
@@ -112,6 +124,25 @@ export default function PatternBuilder({
             </p>
           </div>
 
+          <details className="mt-3 rounded-md border border-line bg-surface">
+            <summary className="cursor-pointer select-none px-3 py-2 text-xs text-accent hover:underline">
+              See the {BUILTIN_PATTERNS.length} patterns Outlay already tries, so you only add what is missing
+            </summary>
+            <ol className="space-y-1.5 border-t border-line px-3 py-2">
+              {BUILTIN_PATTERNS.map((b, i) => (
+                <li key={b.id} className="flex items-baseline gap-2 text-[11px]">
+                  <span className="w-4 shrink-0 text-right tabular text-muted">{i + 1}.</span>
+                  <span className="min-w-0 flex-1 text-ink2">{b.describe}</span>
+                  <span className="shrink-0 font-mono text-ink">{sample(b.template) || "—"}</span>
+                </li>
+              ))}
+            </ol>
+            <p className="border-t border-line px-3 py-2 text-[10px] text-muted">
+              Examples use {SAMPLE_IDENTITY.name} above. The ones your card&apos;s issuer is known to use are tried first,
+              then the rest, then anything you add here.
+            </p>
+          </details>
+
           {(missingLast4 > 0 || missingFirst4 > 0) && (
             <p className="mt-3 text-xs text-warn">
               A pattern using card digits is skipped on any card that has none saved. Right now{" "}
@@ -127,36 +158,50 @@ export default function PatternBuilder({
             {full && <span className="text-warn"> You already have 10 patterns, remove one first.</span>}
           </p>
 
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {PATTERN_TOKENS.map((t) => (
-              <button key={t.id} title={t.hint} onClick={() => setDraft((d) => `${d}{${t.id}}`)} className={chip}>
-                {t.label}
-              </button>
+          <div className="mt-2 divide-y divide-line rounded-md border border-line bg-surface">
+            {PATTERN_GROUPS.map((g) => (
+              <div key={g.id} className="flex flex-col gap-1.5 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
+                <span className="w-24 shrink-0 text-[10px] uppercase tracking-wider text-muted">{g.label}</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {PATTERN_TOKENS.filter((t) => t.group === g.id).map((t) => (
+                    <button key={t.id} title={t.hint} onClick={() => setDraft((d) => `${d}{${t.id}}`)} className={chip}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
-          </div>
-
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <input
-              value={literal}
-              onChange={(e) => setLiteral(e.target.value)}
-              placeholder="any fixed letters, like @ or 01"
-              className="w-52 rounded-md border border-line bg-surface px-2 py-1 text-xs outline-none focus:border-accent"
-            />
-            <button
-              onClick={() => {
-                setDraft((d) => d + literal);
-                setLiteral("");
-              }}
-              disabled={!literal}
-              className={`${chip} disabled:opacity-40`}
-            >
-              Add text
-            </button>
+            <div className="flex flex-col gap-1.5 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
+              <span className="w-24 shrink-0 text-[10px] uppercase tracking-wider text-muted">Fixed text</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <input
+                  value={literal}
+                  onChange={(e) => setLiteral(e.target.value)}
+                  placeholder="any fixed letters, like @ or 01"
+                  className="w-52 rounded-md border border-line bg-surface2 px-2 py-1 text-xs outline-none focus:border-accent"
+                />
+                <button
+                  onClick={() => {
+                    setDraft((d) => d + literal);
+                    setLiteral("");
+                  }}
+                  disabled={!literal}
+                  className={`${chip} disabled:opacity-40`}
+                >
+                  Add text
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="mt-3 rounded-md border border-line bg-surface px-3 py-2">
             <p className="text-[10px] uppercase tracking-wider text-muted">Your pattern</p>
-            <p className="mt-0.5 text-sm text-ink">{draft ? describePattern(draft) : "nothing yet"}</p>
+            <p className={`mt-0.5 text-sm ${draft ? "text-ink" : "italic text-muted"}`}>
+              {draft ? describePattern(draft) : "Tap the pieces above in order, for example NAME then DD then MM"}
+            </p>
+            {duplicateOfBuiltin && (
+              <p className="mt-1 text-[11px] text-warn">Outlay already tries this one on every statement, no need to add it.</p>
+            )}
           </div>
 
           <div className="mt-2 flex flex-wrap gap-2">
@@ -176,7 +221,7 @@ export default function PatternBuilder({
                 setDraft("");
                 setOpen(false);
               }}
-              disabled={!draft || busy || full || patterns.some((p) => p.template === draft)}
+              disabled={!draft || busy || full || duplicateOfBuiltin || patterns.some((p) => p.template === draft)}
               className="ml-auto rounded-md bg-accent px-3 py-1 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-40"
             >
               Save pattern

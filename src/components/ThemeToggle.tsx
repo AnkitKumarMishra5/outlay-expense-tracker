@@ -1,5 +1,6 @@
 "use client";
 
+import { play } from "@/lib/sound";
 import { useState, useSyncExternalStore } from "react";
 
 type Mode = "light" | "dark" | "system";
@@ -37,6 +38,7 @@ export default function ThemeToggle() {
     const next: Mode = mode === "system" ? "light" : mode === "light" ? "dark" : "system";
     setOverride(next);
     apply(next);
+    play("tick");
     listeners.forEach((fn) => fn());
   }
 

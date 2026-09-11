@@ -5,7 +5,7 @@ import { ParsedTxn } from "./types";
 export async function revalidate(q: Query, userId: string, statementId: string) {
   const stmtRs = await q(
     `SELECT card_id, period_start, period_end, statement_date, due_date,
-            total_due, min_due, stated_debits, stated_credits, parser
+            total_due, min_due, stated_debits, stated_credits, parser, paid_at
      FROM statements WHERE id = $1 AND user_id = $2`,
     [statementId, userId]
   );
@@ -57,7 +57,8 @@ export async function revalidate(q: Query, userId: string, statementId: string) 
       },
       transactions: txns,
     },
-    priors
+    priors,
+    stmt.paid_at as string | null
   );
 
   await q(

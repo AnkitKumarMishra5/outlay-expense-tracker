@@ -4,7 +4,7 @@ export default function BankBadge({ bankId, size = 36 }: { bankId: string; size?
   const bank = bankById(bankId);
   return (
     <span
-      aria-label={bank.name}
+      aria-hidden
       title={bank.name}
       className="inline-flex shrink-0 select-none items-center justify-center rounded-lg font-bold"
       style={{

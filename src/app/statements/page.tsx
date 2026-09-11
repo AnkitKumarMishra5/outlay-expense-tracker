@@ -85,6 +85,7 @@ export default function Statements() {
                         totalDue={s.total_due}
                         onChanged={load}
                         compact
+                        card={{ bankId: s.bank_id, label: s.card_label, last4: s.last4 }}
                       />
                     </span>
                   </div>

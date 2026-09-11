@@ -9,12 +9,25 @@ c must be exactly one of: ${CATEGORIES.join(", ")}.
 merely flagged as EMI eligible. Card fees, interest and taxes are "Fees & Charges".
 Payments to the card and refunds are "Payments & Refunds".`;
 
-export async function aiCategorize(rows: { id: string; description: string }[]): Promise<Map<string, string> | null> {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key || rows.length === 0) return null;
-  const payload = rows.slice(0, 400).map((r, i) => ({ i, d: redact(r.description).slice(0, 120) }));
+/**
+  * Rows per model call. Set by the model's output ceiling, not by taste: one
+  * answer is about a dozen tokens per row, so 400 rows lands near 5k output
+  * tokens with plenty of headroom under gpt-4o-mini's 16k cap. Larger batches
+  * are split across calls and still cost one review.
+  */
+const CHUNK = 400;
+
+export type AiOutcome =
+  | { status: "ok"; categories: Map<string, string> }
+  /** The request never reached the model. */
+  | { status: "unreachable" }
+  /** The model answered but the answer could not be read. */
+  | { status: "unusable" };
+
+async function callModel(key: string, payload: { i: number; d: string }[]): Promise<unknown[] | "unreachable" | "unusable"> {
+  let res: Response;
   try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    res = await fetch(`${("https://api.openai.com/v1").replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({
@@ -26,19 +39,40 @@ export async function aiCategorize(rows: { id: string; description: string }[]):
           { role: "user", content: JSON.stringify(payload) },
         ],
       }),
+      signal: AbortSignal.timeout(45_000),
     });
-    if (!res.ok) return null;
+  } catch {
+    return "unreachable";
+  }
+  if (!res.ok) return "unreachable";
+  try {
     const data = await res.json();
     const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}");
-    if (!Array.isArray(parsed.categories)) return null;
-    const out = new Map<string, string>();
-    for (const entry of parsed.categories) {
-      const row = rows[entry?.i];
-      if (!row) continue;
-      if (CATEGORIES.includes(entry.c as (typeof CATEGORIES)[number])) out.set(row.id, entry.c);
-    }
-    return out.size ? out : null;
+    return Array.isArray(parsed.categories) ? parsed.categories : "unusable";
   } catch {
-    return null;
+    return "unusable";
   }
+}
+
+/**
+ * Ask the model for a category per row. Only the redacted merchant description
+ * leaves the server, never amounts, dates, names or card digits.
+ */
+export async function aiCategorize(rows: { id: string; description: string }[]): Promise<AiOutcome> {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key || rows.length === 0) return { status: "unreachable" };
+  const out = new Map<string, string>();
+  for (let start = 0; start < rows.length; start += CHUNK) {
+    const slice = rows.slice(start, start + CHUNK);
+    const payload = slice.map((r, i) => ({ i, d: redact(r.description).slice(0, 120) }));
+    const answer = await callModel(key, payload);
+    if (answer === "unreachable") return start === 0 ? { status: "unreachable" } : { status: "unusable" };
+    if (answer === "unusable") return { status: "unusable" };
+    for (const entry of answer as { i?: number; c?: string }[]) {
+      const row = slice[entry?.i ?? -1];
+      if (!row) continue;
+      if (CATEGORIES.includes(entry?.c as (typeof CATEGORIES)[number])) out.set(row.id, entry!.c!);
+    }
+  }
+  return out.size ? { status: "ok", categories: out } : { status: "unusable" };
 }

@@ -1,4 +1,25 @@
-export type Cue = "flip" | "select" | "tick" | "success" | "error";
+export type Cue =
+  | "flip"
+  | "select"
+  | "tick"
+  | "success"
+  | "error"
+  /** A bill cleared: bright ka-ching with a shimmer tail. */
+  | "settle"
+  /** A bill put back in what is owed. */
+  | "unsettle"
+  /** The model starts reading a statement. */
+  | "scan"
+  /** The model finished: a rising sparkle. */
+  | "sparkle"
+  /** Files landed in the drop zone. */
+  | "drop"
+  /** A statement was read. */
+  | "read"
+  /** Something was removed. */
+  | "delete"
+  /** The session locked. */
+  | "lock";
 
 const KEY = "outlay:sound";
 let ctx: AudioContext | null = null;
@@ -109,6 +130,42 @@ export function play(cue: Cue) {
       break;
     case "error":
       tone(c, t, 320, 0.12, 0.24, "triangle", 220);
+      break;
+    case "settle":
+      // Register bell: a low thump, two bright partials a fifth apart, then shimmer.
+      tone(c, t, 160, 0.09, 0.3, "sine", 70);
+      tone(c, t + 0.02, 1318.5, 0.5, 0.26, "sine");
+      tone(c, t + 0.02, 1975.5, 0.42, 0.14, "sine");
+      tone(c, t + 0.11, 2637, 0.55, 0.16, "sine");
+      tone(c, t + 0.11, 3951, 0.3, 0.05, "sine");
+      sweep(c, t + 0.12, 6000, 12000, 0.34, 0.16);
+      break;
+    case "unsettle":
+      tone(c, t, 660, 0.09, 0.16, "sine");
+      tone(c, t + 0.09, 440, 0.14, 0.14, "sine");
+      break;
+    case "scan":
+      sweep(c, t, 300, 4200, 0.42, 0.34);
+      tone(c, t + 0.05, 220, 0.4, 0.06, "sine", 330);
+      break;
+    case "sparkle":
+      [1046.5, 1318.5, 1568, 2093].forEach((f, i) => tone(c, t + i * 0.055, f, 0.22, 0.14, "sine"));
+      sweep(c, t + 0.2, 5000, 11000, 0.3, 0.12);
+      break;
+    case "drop":
+      tone(c, t, 150, 0.14, 0.34, "sine", 60);
+      sweep(c, t, 900, 200, 0.08, 0.2);
+      break;
+    case "read":
+      sweep(c, t, 3800, 900, 0.09, 0.3);
+      tone(c, t + 0.06, 1480, 0.05, 0.12, "sine");
+      break;
+    case "delete":
+      sweep(c, t, 2200, 260, 0.26, 0.4);
+      break;
+    case "lock":
+      tone(c, t, 740, 0.07, 0.18, "sine");
+      tone(c, t + 0.09, 494, 0.12, 0.18, "sine");
       break;
   }
 }

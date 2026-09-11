@@ -2,11 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import BankBadge from "@/components/BankBadge";
 import CheckList from "@/components/CheckList";
 import CheckSummary from "@/components/CheckSummary";
 import TxnTable from "@/components/TxnTable";
 import TxnEditor from "@/components/TxnEditor";
+import AiOverlay, { BotMark, OverlayCard } from "@/components/AiOverlay";
+import CategorySelect from "@/components/CategorySelect";
+import { play } from "@/lib/sound";
+import type { AiChange, AiStatementResult } from "@/lib/aiReview";
 import { useToast } from "@/components/Toasts";
 import { getJson } from "@/lib/api";
 import { inr } from "@/lib/format";
@@ -28,7 +33,7 @@ interface Parsed {
   checks: Check[];
 }
 
-type Status = "queued" | "working" | "ready" | "needs-card" | "needs-password" | "rejected" | "failed" | "saved";
+type Status = "queued" | "working" | "ready" | "needs-card" | "needs-password" | "rejected" | "failed" | "ai" | "saved";
 
 interface Item {
   id: string;
@@ -42,6 +47,28 @@ interface Item {
   linking?: boolean;
   settled?: boolean;
   password?: string;
+  /** Run the AI category review after saving. Defaults to on when a review is available. */
+  useAi?: boolean;
+  aiNote?: string;
+  aiTone?: "good" | "warn" | "bad";
+  statementId?: string;
+}
+
+interface AiInfo {
+  configured: boolean;
+  limit: number;
+}
+
+interface AiProgress {
+  card: OverlayCard | null;
+  merchants: string[];
+  statements: number;
+  cards: number;
+}
+
+interface AiOutcome {
+  statements: (AiStatementResult & { file: string; card: CardRow | null })[];
+  error?: string;
 }
 
 const STATUS_LABEL: Record<Status, string> = {
@@ -52,6 +79,7 @@ const STATUS_LABEL: Record<Status, string> = {
   "needs-password": "Password needed",
   rejected: "Not a statement",
   failed: "Failed",
+  ai: "Categorising",
   saved: "Saved",
 };
 
@@ -63,6 +91,7 @@ const STATUS_CLASS: Record<Status, string> = {
   "needs-password": "border-warn/40 bg-warn/10 text-warn",
   rejected: "border-bad/40 bg-bad/10 text-bad",
   failed: "border-bad/40 bg-bad/10 text-bad",
+  ai: "border-accent/50 bg-accentSoft text-accent",
   saved: "border-good/40 bg-good/10 text-good",
 };
 
@@ -75,9 +104,31 @@ export default function Upload() {
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [ai, setAi] = useState<AiInfo>({ configured: false, limit: 2 });
+  const [aiProgress, setAiProgress] = useState<AiProgress | null>(null);
+  const [aiOutcome, setAiOutcome] = useState<AiOutcome | null>(null);
+  const [aiEdits, setAiEdits] = useState<Record<string, string>>({});
+  const outcomeRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
 
-  const loadCards = () => getJson<{ cards: CardRow[] }>("/api/cards").then((d) => d && setCards(d.cards ?? []));
+  useEffect(() => {
+    if (aiOutcome) outcomeRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [aiOutcome]);
+
+  const loadCards = () =>
+    getJson<{ cards: CardRow[]; ai?: AiInfo }>("/api/cards").then((d) => {
+      if (!d) return;
+      setCards(d.cards ?? []);
+      if (d.ai) setAi(d.ai);
+    });
+
+  /** AI reviews still available on a card this month. */
+  const aiLeft = (cardId: string | null | undefined) => {
+    if (!cardId) return 0;
+    const card = cards.find((c) => c.id === cardId);
+    return Math.max(0, ai.limit - (card?.ai_used ?? 0));
+  };
+  const wantsAi = (item: Item) => ai.configured && (item.useAi ?? true);
   useEffect(() => {
     loadCards();
   }, []);
@@ -90,6 +141,7 @@ export default function Upload() {
     const skipped = Array.from(list).length - incoming.length;
     if (skipped > 0) toast.push(`${skipped} file(s) skipped`, { detail: "Only PDF statements are accepted.", tone: "warn" });
     if (!incoming.length) return;
+    play("drop");
     setItems((prev) => [
       ...prev,
       ...incoming.map((file) => ({ id: `${file.name}-${file.size}-${Math.round(file.lastModified)}`, file, status: "queued" as Status })),
@@ -145,9 +197,22 @@ export default function Upload() {
       setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: "working" } : i)));
       const current = items.find((i) => i.id === item.id) ?? item;
       const done = await parseOne(current);
+      play(done.parsed ? "read" : "error");
       setItems((prev) => prev.map((i) => (i.id === item.id ? done : i)));
     }
     setBusy(false);
+  }
+
+  /** Fix one of the AI's picks by hand. Saves at once. */
+  async function adjust(change: AiChange, next: string) {
+    setAiEdits((prev) => ({ ...prev, [change.id]: next }));
+    const res = await fetch(`/api/transactions/${change.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ category: next }),
+    });
+    if (res.ok) play("tick");
+    else toast.push("Could not change that category", { tone: "bad" });
   }
 
   function suggestedName(d?: Parsed["detection"]): string {
@@ -177,26 +242,97 @@ export default function Upload() {
 
   async function saveAll() {
     setBusy(true);
+    setAiOutcome(null);
     let saved = 0;
-    for (const item of items.filter((i) => i.status === "ready" && i.parsed && i.cardId)) {
+    const targets = items.filter((i) => i.status === "ready" && i.parsed && i.cardId);
+    const patch = (id: string, next: Partial<Item>) =>
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...next } : i)));
+    const spentCopy = "This card has had both of its AI reviews this month, so the keyword categories were kept. They come back on the 1st.";
+
+    // Save everything first. AI only ever looks at statements that are already kept.
+    const review: { statementId: string; item: Item }[] = [];
+    for (const item of targets) {
       const res = await fetch("/api/statements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cardId: item.cardId, ...item.parsed, paid: item.settled ?? false }),
       });
-      if (res.ok) {
-        saved++;
-        setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: "saved" } : i)));
-      } else {
+      if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: "failed", error: data.error } : i)));
+        patch(item.id, { status: "failed", error: data.error });
+        continue;
+      }
+      saved++;
+      const { id: statementId } = (await res.json().catch(() => ({}))) as { id?: string };
+      if (wantsAi(item) && statementId && aiLeft(item.cardId) > 0) {
+        review.push({ statementId, item });
+        patch(item.id, { status: "ai", statementId });
+      } else {
+        patch(item.id, {
+          status: "saved",
+          statementId,
+          aiTone: "warn",
+          aiNote: wantsAi(item) ? spentCopy : undefined,
+        });
       }
     }
-    setBusy(false);
-    if (saved) {
-        toast.push(`${saved} statement${saved === 1 ? "" : "s"} saved`, { tone: "good" });
-      setTimeout(() => router.push("/statements"), 800);
+    if (saved) toast.push(`${saved} statement${saved === 1 ? "" : "s"} saved`, { tone: "good" });
+    if (!review.length) {
+      setBusy(false);
+      if (saved) setTimeout(() => router.push("/statements"), 800);
+      return;
     }
+
+    // One model call for the whole batch, one review off each card involved.
+    play("scan");
+    const firstCard = cards.find((c) => c.id === review[0].item.cardId) ?? null;
+    setAiProgress({
+      card: firstCard ? { bankId: firstCard.bank_id, label: firstCard.card_label, last4: firstCard.last4 } : null,
+      merchants: review.flatMap((r) => r.item.parsed!.transactions.map((t) => t.description)),
+      statements: review.length,
+      cards: new Set(review.map((r) => r.item.cardId)).size,
+    });
+    const r = await fetch("/api/statements/recategorize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ statementIds: review.map((x) => x.statementId) }),
+    });
+    const body = await r.json().catch(() => ({}));
+    setAiProgress(null);
+    setBusy(false);
+    if (body?.cards) {
+      setCards((prev) => prev.map((c) => (body.cards[c.id] ? { ...c, ai_used: body.cards[c.id].used } : c)));
+    }
+    const byId = new Map(review.map((x) => [x.statementId, x.item]));
+    if (!r.ok) {
+      const error = body.error ?? "The AI could not review these statements right now. Your categories are unchanged, and this did not use up a review.";
+      for (const x of review) patch(x.item.id, { status: "saved", aiTone: "warn", aiNote: error });
+      toast.push("AI review did not happen", { detail: error, tone: "warn", duration: 7000 });
+      setAiOutcome({ statements: [], error });
+      return;
+    }
+    play("sparkle");
+    const results = (body.statements ?? []) as AiStatementResult[];
+    for (const st of results) {
+      const item = byId.get(st.id);
+      if (!item) continue;
+      patch(item.id, {
+        status: "saved",
+        aiTone: st.skipped ? "warn" : "good",
+        aiNote: st.skipped
+          ? spentCopy
+          : st.changed === 0
+            ? `AI looked at all ${st.reviewed} categories and they were already right.`
+            : `AI refined ${st.changed} of ${st.reviewed} categories, shown below.`,
+      });
+    }
+    setAiOutcome({
+      statements: results.map((st) => ({
+        ...st,
+        file: byId.get(st.id)?.file.name ?? "",
+        card: cards.find((c) => c.id === st.cardId) ?? null,
+      })),
+    });
   }
 
   const counts = {
@@ -232,7 +368,16 @@ export default function Upload() {
           addFiles(e.dataTransfer.files);
         }}
         onClick={() => fileRef.current?.click()}
-        className={`flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed p-8 text-center transition-all duration-200 ${
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            fileRef.current?.click();
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-label="Choose statement PDFs to upload"
+        className={`flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed p-8 text-center outline-none transition-all duration-200 focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/40 ${
           dragOver ? "dropzone-active scale-[1.01] border-accent bg-accentSoft" : "border-line hover:border-muted"
         }`}
       >
@@ -291,6 +436,11 @@ export default function Upload() {
                   </div>
 
                   {item.error && <p className="mt-1.5 text-xs text-bad">{item.error}</p>}
+                  {item.aiNote && (
+                    <p className={`mt-1.5 text-xs ${item.aiTone === "good" ? "text-good" : item.aiTone === "bad" ? "text-bad" : "text-warn"}`}>
+                      {item.aiNote}
+                    </p>
+                  )}
 
                   {item.status === "needs-password" && (
                     <div className="mt-2 flex gap-2">
@@ -348,12 +498,36 @@ export default function Upload() {
                       </div>
 
                       {card ? (
-                        <button
-                          onClick={() => setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, linking: true, cardId: null, status: "needs-card" } : x)))}
-                          className="text-xs text-accent hover:underline"
-                        >
-                          Wrong card? Choose a different one
-                        </button>
+                        <div className="space-y-1.5">
+                          <button
+                            onClick={() => setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, linking: true, cardId: null, status: "needs-card" } : x)))}
+                            className="text-xs text-accent hover:underline"
+                          >
+                            Wrong card? Choose a different one
+                          </button>
+                          {ai.configured && item.cardId && (
+                            aiLeft(item.cardId) > 0 ? (
+                              <label className="flex cursor-pointer flex-wrap items-center gap-2 text-xs text-ink2">
+                                <input
+                                  type="checkbox"
+                                  checked={item.useAi ?? true}
+                                  onChange={(e) =>
+                                    setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, useAi: e.target.checked } : x)))
+                                  }
+                                />
+                                Review the categories with AI after saving
+                                <span className="text-muted">
+                                  {aiLeft(item.cardId)} of {ai.limit} AI reviews left for this card this month
+                                </span>
+                              </label>
+                            ) : (
+                              <p className="text-xs text-muted">
+                                This card has had both of its AI reviews this month, so the keyword categories will be kept.
+                                They come back on the 1st.
+                              </p>
+                            )
+                          )}
+                        </div>
                       ) : item.linking || !d?.bankId ? (
                         <div className="flex flex-wrap items-center gap-2">
                           <select
@@ -555,6 +729,98 @@ export default function Upload() {
               waits here for you rather than being guessed.
             </p>
           )}
+        </div>
+      )}
+
+      {aiProgress && (
+        <AiOverlay
+          kicker="Categorising your spends with AI"
+          title={
+            aiProgress.statements > 1
+              ? `${aiProgress.statements} statements on ${aiProgress.cards} card${aiProgress.cards === 1 ? "" : "s"}, ${aiProgress.merchants.length} merchant names`
+              : `Reading ${aiProgress.merchants.length} merchant names`
+          }
+          footnote="One of the two monthly AI reviews for each card here. Only merchant names are sent, never amounts or card details."
+          card={aiProgress.card}
+          merchants={aiProgress.merchants}
+        />
+      )}
+
+      {aiOutcome && (
+        <div ref={outcomeRef} className="card rise scroll-mt-20 p-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="ai-btn pointer-events-none px-2.5 py-1.5">
+              <BotMark />
+              <span className="text-xs">AI review</span>
+            </span>
+            <p className="text-sm text-ink2">
+              {aiOutcome.error
+                ? aiOutcome.error
+                : (() => {
+                    const reviewed = aiOutcome.statements.reduce((a, s) => a + s.reviewed, 0);
+                    const changed = aiOutcome.statements.reduce((a, s) => a + s.changed, 0);
+                    const files = aiOutcome.statements.filter((s) => !s.skipped).length;
+                    return changed === 0
+                      ? `Looked at all ${reviewed} categories across ${files} statement${files === 1 ? "" : "s"}. They were already right.`
+                      : `Refined ${changed} of ${reviewed} categories across ${files} statement${files === 1 ? "" : "s"}.`;
+                  })()}
+            </p>
+          </div>
+
+          {aiOutcome.statements.some((s) => s.changes.length > 0 || s.skipped) && (
+            <div className="mt-3 space-y-3">
+              {aiOutcome.statements
+                .filter((s) => s.changes.length > 0 || s.skipped)
+                .map((s) => (
+                  <div key={s.id} className="rounded-lg border border-line p-3">
+                    <p className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="truncate text-ink" title={s.file}>{s.file}</span>
+                      {s.card && (
+                        <span className="text-muted">
+                          {s.card.card_label} •••• {s.card.last4 ?? "????"}
+                        </span>
+                      )}
+                      <span className={`ml-auto ${s.skipped ? "text-warn" : "text-good"}`}>
+                        {s.skipped ? "AI reviews for this card are used this month" : `${s.changed} of ${s.reviewed} refined`}
+                      </span>
+                    </p>
+                    {s.changes.length > 0 && (
+                      <ul className="mt-2 space-y-1">
+                        {s.changes.map((ch, i) => (
+                          <li
+                            key={ch.id}
+                            className="ai-change-row flex flex-wrap items-center gap-2 rounded-md bg-surface2 px-2.5 py-1.5 text-xs"
+                            style={{ "--d": `${Math.min(i, 12) * 40}ms` } as React.CSSProperties}
+                          >
+                            <span className="min-w-0 flex-1 truncate text-ink" title={ch.description}>{ch.description}</span>
+                            <span className="text-muted line-through">{ch.from}</span>
+                            <span className="text-muted" aria-hidden>→</span>
+                            <CategorySelect
+                              value={aiEdits[ch.id] ?? ch.to}
+                              onChange={(next) => adjust(ch, next)}
+                              label={`Category for ${ch.description}`}
+                              flash={!aiEdits[ch.id]}
+                            />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+            </div>
+          )}
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Link href="/statements" className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90">
+              Continue to statements
+            </Link>
+            <Link href="/dashboard" className="rounded-lg border border-line px-4 py-2 text-sm text-ink2 hover:border-muted">
+              Dashboard
+            </Link>
+            {aiOutcome.statements.some((s) => s.changes.length > 0) && (
+              <span className="text-xs text-muted">Disagree with one? Pick another category above, it saves at once.</span>
+            )}
+          </div>
         </div>
       )}
 

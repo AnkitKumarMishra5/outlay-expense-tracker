@@ -36,43 +36,67 @@ function parts(name: string, dobISO: string, last4?: string | null, first4?: str
   };
 }
 
-const GENERATORS: Record<string, (p: Parts) => string> = {
-  N4U_DDMM: (p) => `${p.name4U}${p.dd}${p.mm}`,
-  N4L_DDMM: (p) => `${p.name4L}${p.dd}${p.mm}`,
-  N4C_DDMM: (p) => `${p.name4U.charAt(0)}${p.name4L.slice(1)}${p.dd}${p.mm}`,
-  N4U_DDMMYY: (p) => `${p.name4U}${p.dd}${p.mm}${p.yy}`,
-  N4U_DDMMYYYY: (p) => `${p.name4U}${p.dd}${p.mm}${p.yyyy}`,
-  N4L_DDMMYYYY: (p) => `${p.name4L}${p.dd}${p.mm}${p.yyyy}`,
-  DDMM_N4U: (p) => `${p.dd}${p.mm}${p.name4U}`,
-  DDMMYYYY: (p) => `${p.dd}${p.mm}${p.yyyy}`,
-  DDMMYY: (p) => `${p.dd}${p.mm}${p.yy}`,
-  FNL_DDMM: (p) => `${p.firstL}${p.dd}${p.mm}`,
-  N4U_YYYY: (p) => `${p.name4U}${p.yyyy}`,
-  L4_DDMM: (p) => (p.last4 ? `${p.last4}${p.dd}${p.mm}` : ""),
-  DDMM_L4: (p) => (p.last4 ? `${p.dd}${p.mm}${p.last4}` : ""),
-  N4U_L4: (p) => (p.last4 ? `${p.name4U}${p.last4}` : ""),
-};
+export interface BuiltinPattern {
+  id: string;
+  template: string;
+  describe: string;
+}
+
+/**
+ * The combinations tried on every statement, in plain words. Each bank in
+ * banks.ts lists the ids it is known to use so those are tried first, then
+ * the rest in this order. Templates use the same tokens as custom patterns.
+ */
+export const BUILTIN_PATTERNS: BuiltinPattern[] = [
+  { id: "N4U_DDMM", template: "{NAME4U}{DD}{MM}", describe: "First 4 letters of your name in CAPITALS, then birth day, then birth month" },
+  { id: "N4L_DDMM", template: "{NAME4L}{DD}{MM}", describe: "First 4 letters of your name in lowercase, then birth day, then birth month" },
+  { id: "N4C_DDMM", template: "{NAME4C}{DD}{MM}", describe: "First 4 letters of your name with only the first capital, then birth day, then birth month" },
+  { id: "N4U_DDMMYY", template: "{NAME4U}{DD}{MM}{YY}", describe: "First 4 letters of your name in CAPITALS, then birth day, month and 2-digit year" },
+  { id: "N4U_DDMMYYYY", template: "{NAME4U}{DD}{MM}{YYYY}", describe: "First 4 letters of your name in CAPITALS, then birth day, month and 4-digit year" },
+  { id: "N4L_DDMMYYYY", template: "{NAME4L}{DD}{MM}{YYYY}", describe: "First 4 letters of your name in lowercase, then birth day, month and 4-digit year" },
+  { id: "DDMM_N4U", template: "{DD}{MM}{NAME4U}", describe: "Birth day, then birth month, then first 4 letters of your name in CAPITALS" },
+  { id: "DDMMYYYY", template: "{DD}{MM}{YYYY}", describe: "Your full date of birth as 8 digits: day, month, 4-digit year" },
+  { id: "DDMMYY", template: "{DD}{MM}{YY}", describe: "Your date of birth as 6 digits: day, month, 2-digit year" },
+  { id: "FNL_DDMM", template: "{FIRSTL}{DD}{MM}", describe: "Your whole first name in lowercase, then birth day, then birth month" },
+  { id: "N4U_YYYY", template: "{NAME4U}{YYYY}", describe: "First 4 letters of your name in CAPITALS, then 4-digit birth year" },
+  { id: "L4_DDMM", template: "{LAST4}{DD}{MM}", describe: "Last 4 digits of the card, then birth day, then birth month" },
+  { id: "DDMM_L4", template: "{DD}{MM}{LAST4}", describe: "Birth day, then birth month, then last 4 digits of the card" },
+  { id: "N4U_L4", template: "{NAME4U}{LAST4}", describe: "First 4 letters of your name in CAPITALS, then last 4 digits of the card" },
+];
+
+const GENERATORS: Record<string, (p: Parts) => string> = Object.fromEntries(
+  BUILTIN_PATTERNS.map((b) => [b.id, (p: Parts) => fill(b.template, p)])
+);
+
+export type PatternGroup = "name" | "dob" | "card";
 
 export interface PatternToken {
   id: string;
   label: string;
   hint: string;
+  group: PatternGroup;
 }
 
+export const PATTERN_GROUPS: { id: PatternGroup; label: string }[] = [
+  { id: "name", label: "Name" },
+  { id: "dob", label: "Date of birth" },
+  { id: "card", label: "Card" },
+];
+
 export const PATTERN_TOKENS: PatternToken[] = [
-  { id: "NAME4U", label: "NAME", hint: "First 4 letters of your name, capitals" },
-  { id: "NAME4L", label: "name", hint: "First 4 letters, lowercase" },
-  { id: "NAME4C", label: "Name", hint: "First 4 letters, first one capital" },
-  { id: "FIRSTU", label: "FIRSTNAME", hint: "Your whole first name, capitals" },
-  { id: "FIRSTL", label: "firstname", hint: "Your whole first name, lowercase" },
-  { id: "SURN4U", label: "SURNAME", hint: "First 4 letters of your surname, capitals" },
-  { id: "SURN4L", label: "surname", hint: "First 4 letters of your surname, lowercase" },
-  { id: "DD", label: "DD", hint: "Day of birth, two digits" },
-  { id: "MM", label: "MM", hint: "Month of birth, two digits" },
-  { id: "YY", label: "YY", hint: "Birth year, last two digits" },
-  { id: "YYYY", label: "YYYY", hint: "Birth year, all four digits" },
-  { id: "FIRST4", label: "First 4", hint: "First 4 digits of the card number" },
-  { id: "LAST4", label: "Last 4", hint: "Last 4 digits of the card number" },
+  { id: "NAME4U", label: "NAME", hint: "First 4 letters of your name, capitals", group: "name" },
+  { id: "NAME4L", label: "name", hint: "First 4 letters, lowercase", group: "name" },
+  { id: "NAME4C", label: "Name", hint: "First 4 letters, first one capital", group: "name" },
+  { id: "FIRSTU", label: "FIRSTNAME", hint: "Your whole first name, capitals", group: "name" },
+  { id: "FIRSTL", label: "firstname", hint: "Your whole first name, lowercase", group: "name" },
+  { id: "SURN4U", label: "SURNAME", hint: "First 4 letters of your surname, capitals", group: "name" },
+  { id: "SURN4L", label: "surname", hint: "First 4 letters of your surname, lowercase", group: "name" },
+  { id: "DD", label: "DD", hint: "Day of birth, two digits", group: "dob" },
+  { id: "MM", label: "MM", hint: "Month of birth, two digits", group: "dob" },
+  { id: "YY", label: "YY", hint: "Birth year, last two digits", group: "dob" },
+  { id: "YYYY", label: "YYYY", hint: "Birth year, all four digits", group: "dob" },
+  { id: "FIRST4", label: "First 4", hint: "First 4 digits of the card number", group: "card" },
+  { id: "LAST4", label: "Last 4", hint: "Last 4 digits of the card number", group: "card" },
 ];
 
 const TOKEN_VALUES: Record<string, (p: Parts) => string> = {
@@ -106,14 +130,7 @@ export function sampleFor(tokenId: string): string {
   return fn(parts(SAMPLE_IDENTITY.name, SAMPLE_IDENTITY.dob, SAMPLE_IDENTITY.last4, SAMPLE_IDENTITY.first4));
 }
 
-export function renderPattern(
-  template: string,
-  name: string,
-  dobISO: string,
-  last4?: string | null,
-  first4?: string | null
-): string {
-  const p = parts(name, dobISO, last4, first4);
+function fill(template: string, p: Parts): string {
   let missing = false;
   const out = template.replace(/\{([A-Z0-9]+)\}/g, (whole, id: string) => {
     const fn = TOKEN_VALUES[id];
@@ -123,6 +140,21 @@ export function renderPattern(
     return value;
   });
   return missing ? "" : out;
+}
+
+export function renderPattern(
+  template: string,
+  name: string,
+  dobISO: string,
+  last4?: string | null,
+  first4?: string | null
+): string {
+  return fill(template, parts(name, dobISO, last4, first4));
+}
+
+/** True when a custom template is identical to one of the built-in combinations. */
+export function isBuiltinPattern(template: string): boolean {
+  return BUILTIN_PATTERNS.some((b) => b.template === template);
 }
 
 export function describePattern(template: string): string {

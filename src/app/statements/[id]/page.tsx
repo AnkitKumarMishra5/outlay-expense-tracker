@@ -1,5 +1,6 @@
 "use client";
 
+import { play } from "@/lib/sound";
 import PaidToggle from "@/components/PaidToggle";
 import AiReview from "@/components/AiReview";
 import { useCallback, useEffect, useState, use } from "react";
@@ -42,6 +43,7 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
   async function remove() {
     if (!confirm("Delete this statement and all its transactions?")) return;
     await fetch(`/api/statements/${id}`, { method: "DELETE" });
+    play("delete");
     toast.push("Statement deleted", { tone: "warn" });
     router.push("/statements");
   }
@@ -82,6 +84,7 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
             dueDate={data.statement.due_date}
             totalDue={data.statement.total_due}
             onChanged={load}
+            card={{ bankId: data.statement.bank_id, label: data.statement.card_label, last4: data.statement.last4 }}
           />
         </span>
         <button onClick={remove} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink2 hover:border-bad hover:text-bad">
@@ -121,6 +124,8 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
               statementId={id}
               rows={data.transactions.length}
               ai={data.ai}
+              card={{ bankId: data.statement.bank_id, label: data.statement.card_label, last4: data.statement.last4 }}
+              merchants={data.transactions.map((t) => t.description)}
               onChanged={(ids) => {
                 setFlashed(new Set(ids));
                 load();

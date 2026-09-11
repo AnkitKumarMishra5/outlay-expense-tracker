@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { currentUserId, unauthorized } from "@/lib/auth";
+import { revalidate } from "@/lib/revalidate";
 import { decryptOrNull } from "@/lib/crypto";
 import { aiState } from "@/lib/aiQuota";
 
@@ -31,12 +32,18 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }
   const c = await db();
-  const res = await c.execute("UPDATE statements SET paid_at = $1 WHERE id = $2 AND user_id = $3", [
-    body.paid ? new Date().toISOString() : null,
-    id,
-    userId,
-  ]);
-  if (!res.rowsAffected) return NextResponse.json({ error: "Not found." }, { status: 404 });
+  // Settling changes the answer to "is this overdue", so the stored check
+  // record is rebuilt in the same transaction as the flag itself.
+  const affected = await c.tx(async (q) => {
+    const res = await q("UPDATE statements SET paid_at = $1 WHERE id = $2 AND user_id = $3", [
+      body.paid ? new Date().toISOString() : null,
+      id,
+      userId,
+    ]);
+    if (res.rowsAffected) await revalidate(q, userId, id);
+    return res.rowsAffected;
+  });
+  if (!affected) return NextResponse.json({ error: "Not found." }, { status: 404 });
   return NextResponse.json({ ok: true, paid: body.paid });
 }
 

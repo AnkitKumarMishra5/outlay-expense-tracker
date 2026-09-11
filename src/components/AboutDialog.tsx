@@ -93,7 +93,7 @@ export default function AboutDialog() {
                     <a
                       href={l.href}
                       target={l.href.startsWith("http") ? "_blank" : undefined}
-                      rel={l.href.startsWith("http") ? "noopener noreferrer" : undefined}
+                      rel={l.href.startsWith("http") ? (l.key === "site" ? "noopener" : "noopener noreferrer") : undefined}
                       className="flex w-full items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink2 hover:border-muted hover:text-ink sm:inline-flex sm:w-auto sm:py-1.5"
                     >
                       <ContactIcon name={l.key} />

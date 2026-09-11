@@ -3,13 +3,22 @@ import { db } from "@/lib/db";
 import { currentUserId, unauthorized } from "@/lib/auth";
 import { decryptOrNull } from "@/lib/crypto";
 
+/** YYYY-MM-DD as it reads where the request came from, not where the server is. */
+function today(timeZone: string | null): string {
+  try {
+    if (timeZone) return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date());
+  } catch {}
+  return new Date().toISOString().slice(0, 10);
+}
+
 export async function GET(req: NextRequest) {
   const userId = await currentUserId(req);
   if (!userId) return unauthorized();
+  const tz = req.nextUrl.searchParams.get("tz");
   const c = await db();
   const [cards, statements, transactions] = await Promise.all([
     c.execute("SELECT id, bank_id, bank_name, card_label, last4_enc, first4_enc, created_at FROM cards WHERE user_id = $1", [userId]),
-    c.execute("SELECT id, card_id, period_start, period_end, statement_date, due_date, total_due, min_due, total_debits, total_credits, txn_count, checks_json, parser, created_at FROM statements WHERE user_id = $1", [userId]),
+    c.execute("SELECT id, card_id, period_start, period_end, statement_date, due_date, total_due, min_due, total_debits, total_credits, txn_count, checks_json, paid_at, parser, created_at FROM statements WHERE user_id = $1", [userId]),
     c.execute("SELECT id, statement_id, card_id, txn_date, description, amount, type, category, is_fee, is_international FROM transactions WHERE user_id = $1", [userId]),
   ]);
   return new NextResponse(
@@ -23,7 +32,7 @@ export async function GET(req: NextRequest) {
     {
       headers: {
         "Content-Type": "application/json",
-        "Content-Disposition": `attachment; filename="outlay-export-${new Date().toISOString().slice(0, 10)}.json"`,
+        "Content-Disposition": `attachment; filename="outlay-export-${today(tz)}.json"`,
       },
     }
   );

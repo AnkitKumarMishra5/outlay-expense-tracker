@@ -5,6 +5,8 @@ import { useToast } from "./Toasts";
 import { inr } from "@/lib/format";
 import { bankById } from "@/lib/banks";
 import { Analytics } from "@/lib/types";
+import { celebrate } from "@/lib/celebrate";
+import { play } from "@/lib/sound";
 
 export type Bill = Analytics["dues"][number];
 
@@ -47,6 +49,7 @@ export default function BillsPanel({
   const now = today();
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
+  const [clearing, setClearing] = useState<string | null>(null);
   const [showSettled, setShowSettled] = useState(false);
 
   if (bills.length === 0) return null;
@@ -75,12 +78,23 @@ export default function BillsPanel({
   async function settle(b: Bill, next: boolean) {
     if (!onSettle) return;
     setBusy(b.id);
+    if (next) {
+      setClearing(b.id);
+      celebrate({
+        kind: "settled",
+        card: { bankId: b.bank_id, label: b.card_label, last4: b.last4 },
+        amount: Number(b.amount ?? 0),
+        detail: `${b.card_label} •••• ${b.last4 ?? "????"}, was due ${b.day}`,
+      });
+    } else {
+      play("unsettle");
+    }
     await onSettle(b.id, next);
     setBusy(null);
-    toast.push(next ? `${b.card_label} marked as settled` : `${b.card_label} marked as not settled`, {
-      detail: next ? `${inr(Number(b.amount ?? 0))} cleared, due ${b.day}` : `Back in what is owed, due ${b.day}`,
-      tone: next ? "good" : "info",
-    });
+    setClearing(null);
+    if (!next) {
+      toast.push(`${b.card_label} back in what is owed`, { detail: `Due ${b.day}`, tone: "info" });
+    }
   }
 
   return (
@@ -123,7 +137,7 @@ export default function BillsPanel({
           return (
             <li
               key={b.id}
-              className="rise flex items-center gap-2.5 rounded-lg border border-line bg-surface2 px-2.5 py-2 text-xs"
+              className={`rise flex items-center gap-2.5 rounded-lg border border-line bg-surface2 px-2.5 py-2 text-xs ${clearing === b.id ? "bill-clearing" : ""}`}
               style={{ "--d": `${Math.min(i, 8) * 40}ms` } as React.CSSProperties}
             >
               <span className="h-6 w-1 shrink-0 rounded-full" style={{ background: bankById(b.bank_id).color }} />

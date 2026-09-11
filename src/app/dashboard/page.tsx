@@ -128,6 +128,8 @@ export default function Dashboard() {
     );
 
   async function settle(id: string, settled: boolean) {
+    // Reflect it at once; the refetch below confirms the figures.
+    setData((prev) => (prev ? { ...prev, dues: prev.dues.map((d) => (d.id === id ? { ...d, settled } : d)) } : prev));
     const res = await fetch(`/api/statements/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -136,6 +138,8 @@ export default function Dashboard() {
     if (res.ok) {
       load();
       loadRail();
+    } else {
+      setData((prev) => (prev ? { ...prev, dues: prev.dues.map((d) => (d.id === id ? { ...d, settled: !settled } : d)) } : prev));
     }
   }
 

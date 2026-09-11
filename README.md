@@ -143,59 +143,9 @@ Extraction is deterministic. `heuristicParse` reads the common `DD/MM/YYYY DESCR
 
 The model is used for one thing: **rereading merchant names when the category rules get them wrong**. Rules match on substrings, so a merchant the registry has never seen lands in "Other", and an occasional one lands in the wrong bucket. That is a language problem, which is what a model is actually good at.
 
-It is metered because it is the only thing that costs money. **Each card gets two reviews per calendar month**, counted in an `ai_usage` row keyed on account, card and month. Quota is consumed only when a call returns something usable, so a failed call costs nothing, and the counter resets on the first. Before the call the text is redacted: card numbers collapsed to their last four digits, emails, Indian phone numbers, PAN and Aadhaar-shaped values masked. Only the descriptions are sent, never amounts or dates. With no key configured the feature is visibly disabled and the app makes no outbound requests at all.
+It is metered because it is the only thing that costs money. **Each card gets two reviews per calendar month**, counted in an `ai_usage` row. The review is taken before the model is called and handed straight back if nothing usable comes of it, so you only spend one on an answer you actually got. Only the merchant descriptions are sent, redacted first, never amounts or dates. With no key configured the feature is visibly disabled and the app makes no outbound request at all.
 
-## What gets checked
-
-Validation runs before persistence and the result is stored with the statement, so every saved statement carries its own audit record.
-
-| Check | Compares | Levels |
-|---|---|---|
-| Extraction | Row count, debit and credit split | pass, fail |
-| Debit checksum | Computed debit total vs the printed total | pass, warn, fail |
-| Credit checksum | Computed credit total vs the printed total | pass, warn, fail |
-| Fees | Annual, joining, renewal, late-payment, over-limit lines | pass, warn |
-| Interest | Finance-charge lines | pass, warn |
-| GST | GST charged on fees or interest | warn |
-| Duplicates | Matching date, merchant and amount | pass, warn |
-| Cash advance | ATM and cash-advance lines | warn |
-| International | Foreign-currency lines and markup | warn |
-| Payment due | Due date and amount against today | pass, warn |
-| Continuity | Period start against the previous saved period | pass, warn |
-| Duplicate statement | Period end against saved statements | fail |
-
-A checksum mismatch is the important one: it is how a silently under-parsed statement announces itself instead of quietly skewing the analytics.
-
-## Accounts and isolation
-
-Every account is a tenant. `users` holds the identity; `profile`, `cards`, `statements` and `transactions` all carry a `user_id`, and every query filters on it. There is no admin view and no cross-account join, so there is no code path that can return another account's rows.
-
-```
-POST /api/auth/register   email + password -> scrypt(N=16384) -> users row
-POST /api/auth/login      scrypt verify -> timingSafeEqual -> session
-cookie                    httpOnly, SameSite=Strict, Secure, Max-Age=900
-token                     userId.expiresAt.issuedAt.HMAC-SHA256(payload)
-```
-
-The user id is inside the signed payload alongside the expiry, so a copied cookie can be neither retargeted at another account nor extended past its fifteen minutes. Login is rate limited per address and email. Setting `SIGNUP_INVITE_CODE` to a secret string means account creation requires that string, which is how a public deployment stays private to the people given the code.
-
-Encryption keys are derived per account: `HMAC-SHA256(APP_ENCRYPTION_KEY, "outlay:user:" + userId)`. One master key never leaves the environment, but each account's name, date of birth and statement passwords are sealed under a key unique to it, so a leak scoped to one account cannot unseal another.
-
-Registration requires `SIGNUP_INVITE_CODE`. It is not optional: the deployment refuses to serve at all until the variable is set, so a public URL never carries an open signup form.
-
-## What is stored, and what never is
-
-| Data | Storage | Protection |
-|---|---|---|
-| Statement PDF | none | parsed in request memory, discarded |
-| Full card number | none | never captured; only the first and last four, each encrypted |
-| Name, date of birth | Postgres | AES-256-GCM, random 96-bit IV per value |
-| Statement passwords | Postgres | AES-256-GCM, per card |
-| Card first and last four | Postgres | AES-256-GCM, decrypted per request |
-| Transactions | Postgres | plaintext in your own database |
-| Encryption key | `.env.local` | gitignored, never in the database |
-
-GCM is authenticated, so a tampered ciphertext throws on decrypt instead of returning corrupted plaintext. Every query binds its arguments, so merchant strings lifted from a PDF cannot alter query structure. Mutating requests must be same-origin, checked on `Sec-Fetch-Site` with an `Origin` fallback, which with `SameSite=Strict` closes CSRF. Responses carry a strict CSP, `frame-ancestors 'none'`, nosniff, `no-referrer`, HSTS, and `no-store` on API routes.
+On upload, the whole batch goes to the model in **one call**, taking one review off each card involved. A panel then shows what changed, each pick editable, and none of it is a required step. The same engine sits behind the recheck button on a statement page.
 
 ## Endpoints
 
@@ -211,7 +161,8 @@ GCM is authenticated, so a tampered ciphertext throws on decrypt instead of retu
 | POST | `/api/statements/parse` | session | unlock, extract, validate, return for review |
 | GET, POST | `/api/statements` | session | list, persist a reviewed statement |
 | GET, PATCH, DELETE | `/api/statements/[id]` | session | statement detail, settled status, delete |
-| POST | `/api/statements/[id]/recategorize` | session | model re-reads every category, costs one of the card's two monthly runs |
+| POST | `/api/statements/recategorize` | session | model re-reads every category across a batch in one call, one review off each card involved |
+| POST | `/api/statements/[id]/recategorize` | session | the same for a single statement |
 | GET | `/api/transactions` | session | every row, filtered by card, statement, category, type or text |
 | PATCH, DELETE | `/api/transactions/[id]` | session | correct or remove a row, then re-run the statement checks |
 | GET | `/api/analytics` | session | aggregates by range and card |
@@ -226,14 +177,12 @@ Storage is Postgres over `pg`, one pool per process. The schema is created on fi
 
 ## Run it locally
 
-Needs a Postgres database. Any will do. A Neon free database takes a minute to create, or run one locally:
+Needs a Postgres database. A free Neon database takes a minute to create and works locally and in production alike:
 
-```bash
-docker run -d --name outlay-pg -e POSTGRES_PASSWORD=outlay -p 5432:5432 postgres:17
-```
+1. Sign in at [neon.tech](https://neon.tech) and create a project.
+2. Open the project dashboard, click **Connect**, and copy the **pooled** connection string. It looks like `postgresql://user:password@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require`.
 
-If 5432 is already taken, publish on another port and match it in `DATABASE_URL`:
-`-p 5440:5432` with `postgresql://postgres:outlay@localhost:5440/postgres`.
+Any other hosted or locally installed Postgres works too. Connections to anything other than `localhost` use TLS automatically.
 
 ```bash
 npm install
@@ -243,14 +192,16 @@ npm run keygen    # writes APP_ENCRYPTION_KEY and SIGNUP_INVITE_CODE into .env.l
 Add the connection string to `.env.local`:
 
 ```
-DATABASE_URL=postgresql://postgres:outlay@localhost:5432/postgres
+DATABASE_URL=postgresql://user:password@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require
 ```
 
 ```bash
 npm run dev -- --port 3020
 ```
 
-Create an account with the invite code the keygen printed, then enter the cardholder name and date of birth exactly as they appear on the statement. Those two values derive the passwords.
+The schema is created on first connection, so there is nothing to migrate. Create an account with the invite code the keygen printed, then enter the cardholder name and date of birth exactly as they appear on the statement. Those two values derive the passwords.
+
+Use a separate Neon database, or a separate branch of the same project, for local work. The local `APP_ENCRYPTION_KEY` is different from the deployed one, so rows written by one deployment cannot be decrypted by the other.
 
 ## Deploy your own
 
@@ -286,7 +237,8 @@ The app returns 503 on every route until all three are present, so a half-config
 | Encryption | AES-256-GCM, per-account keys derived from one master key |
 | PDF | pdf.js (`pdfjs-dist/legacy`), unlocked and read in memory |
 | Charts | Recharts |
-| Motion | CSS keyframes and the Web Animations API, no animation library |
+| Motion | CSS keyframes and the Web Animations API, no animation library. A card under a reading beam while the model works, a stamped check and confetti when a bill clears |
+| Sound | Short cues synthesised with the Web Audio API, no audio files: a register bell on settle, a scan sweep and a sparkle around AI review, ticks and whooshes elsewhere. One toggle in the nav |
 | AI | OpenAI `gpt-4o-mini` for category review only, optional, capped at two runs per card per month |
 | Hosting | Vercel and Neon, both free tier |
 

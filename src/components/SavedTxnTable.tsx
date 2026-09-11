@@ -114,6 +114,13 @@ export default function SavedTxnTable({
                           min="0"
                           value={amount}
                           onChange={(e) => setAmount(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && Number(amount) > 0 && busy !== t.id) {
+                              e.preventDefault();
+                              send(t.id, { amount: Number(amount) }, `Amount updated to ${inr(Number(amount))}`);
+                            }
+                            if (e.key === "Escape") setEditing(null);
+                          }}
                           className={`${field} w-[104px] text-right tabular`}
                           autoFocus
                         />

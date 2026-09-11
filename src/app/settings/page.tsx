@@ -1,5 +1,6 @@
 "use client";
 
+import { play } from "@/lib/sound";
 import CardDigits from "@/components/CardDigits";
 import PatternBuilder, { SavedPattern } from "@/components/PatternBuilder";
 import { useCallback, useEffect, useState } from "react";
@@ -18,6 +19,10 @@ export default function Settings() {
   const [confirmText, setConfirmText] = useState("");
   const [cardQuery, setCardQuery] = useState("");
   const [account, setAccount] = useState<{ email: string | null } | null>(null);
+  const [editingIdentity, setEditingIdentity] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [draftDob, setDraftDob] = useState("");
+  const [savingIdentity, setSavingIdentity] = useState(false);
   const toast = useToast();
 
   const loadCards = useCallback(() => {
@@ -41,6 +46,27 @@ export default function Settings() {
     loadCards();
     getJson<{ email: string | null }>("/api/auth/session").then((d) => d && setAccount(d));
   };
+
+  async function saveIdentity() {
+    setSavingIdentity(true);
+    const res = await fetch("/api/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: draftName.trim(), dob: draftDob }),
+    });
+    setSavingIdentity(false);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      toast.push(d.error ?? "Could not save that", { tone: "bad" });
+      return;
+    }
+    setEditingIdentity(false);
+    toast.push("Statement identity updated", {
+      detail: "New statements will use these. Cards already unlocked keep their saved password.",
+      tone: "good",
+    });
+    load();
+  }
   useEffect(load, [loadCards]);
 
   async function removeCard(id: string) {
@@ -57,6 +83,7 @@ export default function Settings() {
       body: JSON.stringify({ confirm: confirmText }),
     });
     if (res.ok) {
+      play("delete");
       toast.push("All data wiped", { tone: "bad" });
       router.push("/onboarding");
     }
@@ -87,10 +114,68 @@ export default function Settings() {
         <h2 className="mb-3 text-sm font-medium text-ink2">Statement identity</h2>
         {profile ? (
           <div className="text-sm">
-            <p>{profile.name}</p>
-            <p className="mt-1 text-xs text-muted">
-              Date of birth: <span className="tabular">{profile.dobMasked}</span>. Stored AES-256-GCM encrypted under a key unique to your account, displayed masked, used only to derive statement passwords.
-            </p>
+            {editingIdentity ? (
+              <div className="rounded-lg border border-line bg-surface2 p-3">
+                <p className="text-xs text-ink2">
+                  Both are needed together, because a statement password is built from them. Type the date of birth
+                  again to confirm it.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <input
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    placeholder="As printed on your card"
+                    aria-label="Full name, as printed on your card"
+                    className="w-56 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm outline-none focus:border-accent"
+                  />
+                  <input
+                    type="date"
+                    value={draftDob}
+                    onChange={(e) => setDraftDob(e.target.value)}
+                    aria-label="Date of birth"
+                    className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm outline-none focus:border-accent"
+                  />
+                </div>
+                <p className="mt-2 text-xs text-muted">
+                  Statements already saved are untouched, and each card keeps the password that opened it. This changes
+                  what future uploads try first.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={saveIdentity}
+                    disabled={savingIdentity || !draftName.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(draftDob)}
+                    className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
+                  >
+                    {savingIdentity ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    onClick={() => setEditingIdentity(false)}
+                    className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink2 hover:border-muted"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p>{profile.name}</p>
+                  <button
+                    onClick={() => {
+                      setDraftName(profile.name);
+                      setDraftDob("");
+                      setEditingIdentity(true);
+                    }}
+                    className="text-xs text-accent hover:underline"
+                  >
+                    Edit
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-muted">
+                  Date of birth: <span className="tabular">{profile.dobMasked}</span>. Stored AES-256-GCM encrypted under a key unique to your account, displayed masked, used only to derive statement passwords.
+                </p>
+              </>
+            )}
             <div className="mt-4 border-t border-line pt-4">
               <PatternBuilder
                 patterns={profile.patterns ?? []}
@@ -183,7 +268,19 @@ export default function Settings() {
         <p className="mb-3 text-sm text-ink2">
           All data is stored in a Postgres database you control. Export it at any time.
         </p>
-        <a href="/api/export" className="rounded-lg border border-line px-3 py-1.5 text-sm hover:border-muted">
+        <a
+          href="/api/export"
+          onClick={(e) => {
+            // The server has no idea what day it is where you are, so without
+            // this the filename would carry its date instead of yours. Setting
+            // href here lets the browser handle the download itself.
+            try {
+              const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+              if (tz) e.currentTarget.href = `/api/export?tz=${encodeURIComponent(tz)}`;
+            } catch {}
+          }}
+          className="rounded-lg border border-line px-3 py-1.5 text-sm hover:border-muted"
+        >
           Download JSON export
         </a>
       </section>

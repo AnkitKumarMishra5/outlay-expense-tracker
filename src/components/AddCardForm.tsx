@@ -66,6 +66,8 @@ export default function AddCardForm({ onAdded }: { onAdded: () => void }) {
               key={b.id}
               type="button"
               onClick={() => setBankId(b.id)}
+              aria-label={b.name}
+              aria-pressed={bankId === b.id}
               style={{ "--d": `${i * 25}ms` } as React.CSSProperties}
               className={`rise flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-sm ${
                 bankId === b.id ? "border-accent bg-accent/10" : "border-line hover:border-muted"

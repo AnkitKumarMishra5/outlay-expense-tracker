@@ -1,5 +1,6 @@
 "use client";
 
+import { play } from "@/lib/sound";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -21,6 +22,7 @@ export default function SessionTimer() {
     async (reason: "expired" | "manual") => {
       if (locking.current) return;
       locking.current = true;
+      play("lock");
       await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
       router.replace(reason === "expired" ? "/login?expired=1" : "/login");
       router.refresh();

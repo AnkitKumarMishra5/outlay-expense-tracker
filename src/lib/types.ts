@@ -45,6 +45,8 @@ export interface CardRow {
   first4: string | null;
   has_password: number;
   created_at: string;
+  /** AI category reviews already used on this card this month. */
+  ai_used?: number;
 }
 
 export interface StatementRow {

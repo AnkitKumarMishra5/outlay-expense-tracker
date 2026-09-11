@@ -9,7 +9,11 @@ export interface PriorStatementInfo {
   periodStart: string | null;
 }
 
-export function runChecks(parsed: ParsedStatement, priors: PriorStatementInfo[]): Check[] {
+/**
+ * @param paidAt ISO timestamp when the bill was settled, when it has been.
+ *   A settled bill is not overdue, so the due check reports that instead.
+ */
+export function runChecks(parsed: ParsedStatement, priors: PriorStatementInfo[], paidAt?: string | null): Check[] {
   const { transactions: txns, summary } = parsed;
   const checks: Check[] = [];
   const debits = txns.filter((t) => t.type === "debit");
@@ -36,7 +40,7 @@ export function runChecks(parsed: ParsedStatement, priors: PriorStatementInfo[])
     } else if (Math.abs(computed - stated) < 1) {
       checks.push({ id, label, status: "pass", detail: `Computed ${inr(computed)} matches the printed total ${inr(stated)}.` });
     } else {
-      checks.push({ id, label, status: "fail", detail: `Computed ${inr(computed)} vs printed ${inr(stated)}, a difference of ${inr(Math.abs(computed - stated))}. Rows may be missing or misread. Review before saving.` });
+      checks.push({ id, label, status: "fail", detail: `Computed ${inr(computed)} vs printed ${inr(stated)}, a difference of ${inr(Math.abs(computed - stated))}. Rows may be missing or misread.` });
     }
   }
 
@@ -92,12 +96,20 @@ export function runChecks(parsed: ParsedStatement, priors: PriorStatementInfo[])
         ? ` Ends in ${String(paise).padStart(2, "0")} paise: round up, never down, as some issuers treat a short payment as unpaid.`
         : "";
 
-    checks.push({
-      id: "due", label: "Payment due", status: days < 0 ? "warn" : "pass",
-      detail: days < 0
-        ? `Due date ${summary.dueDate} has passed. Total due was ${summary.totalDue !== undefined ? inr(summary.totalDue) : "unknown"}.${paiseNote}`
-        : `${summary.totalDue !== undefined ? inr(summary.totalDue) : "Amount"} due by ${summary.dueDate} (${days} day${days === 1 ? "" : "s"} away). Pay the total due, not the minimum.${paiseNote}`,
-    });
+    const amount = summary.totalDue !== undefined ? inr(summary.totalDue) : "The amount";
+    checks.push(
+      paidAt
+        ? {
+            id: "due", label: "Payment due", status: "pass",
+            detail: `Settled. ${amount} was due by ${summary.dueDate}.`,
+          }
+        : {
+            id: "due", label: "Payment due", status: days < 0 ? "warn" : "pass",
+            detail: days < 0
+              ? `Due date ${summary.dueDate} has passed. Total due was ${summary.totalDue !== undefined ? inr(summary.totalDue) : "unknown"}.${paiseNote}`
+              : `${amount} due by ${summary.dueDate} (${days} day${days === 1 ? "" : "s"} away). Pay the total due, not the minimum.${paiseNote}`,
+          }
+    );
   }
 
   if (summary.periodStart && priors.length) {

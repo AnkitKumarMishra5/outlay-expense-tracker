@@ -3,7 +3,6 @@
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import DashboardView from "@/components/DashboardView";
-import Logo from "@/components/Logo";
 import FindingIllustrations from "@/components/FindingIllustrations";
 import { INVITE_MAILTO } from "@/lib/developer";
 import { DEMO_CARDS } from "@/lib/demo";
@@ -73,13 +72,8 @@ export default function Landing() {
   return (
     <div className="space-y-16">
       <section className="pt-4 text-center">
-        <span className="rise inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-surface2 px-3 py-1 text-[11px] text-ink2 sm:text-xs">
-          <Logo size={16} />
-          <span className="sm:hidden">Only you can see your statements</span>
-          <span className="hidden sm:inline">Invite only. Only you can see your statements.</span>
-        </span>
         <h1
-          className="rise mx-auto mt-4 max-w-3xl text-balance text-3xl font-semibold leading-tight tracking-tight sm:mt-5 sm:text-5xl"
+          className="rise mx-auto max-w-3xl text-balance text-3xl font-semibold leading-tight tracking-tight sm:mt-5 sm:text-5xl"
           style={{ "--d": "60ms" } as React.CSSProperties}
         >
           Every card you hold, reconciled every month
@@ -109,7 +103,7 @@ export default function Landing() {
           </Link>
         </div>
         <p className="rise mt-3 text-xs text-muted" style={{ "--d": "240ms" } as React.CSSProperties}>
-          Invite only.{" "}
+          Invite only, and only you can see your statements.{" "}
           <a href={INVITE_MAILTO} className="text-accent underline underline-offset-2 hover:no-underline">
             Ask Ankit for a code
           </a>
