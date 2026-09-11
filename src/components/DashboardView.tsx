@@ -111,7 +111,7 @@ export default function DashboardView({
             ))}
           </div>
 
-          <BillsPanel bills={data.dues ?? []} onSettle={onSettle} cards={cards} />
+          <BillsPanel bills={data.dues ?? []} onSettle={onSettle} cards={cards} activeId={activeId} />
 
           <div
             className="grid min-w-0 grid-cols-1 gap-4 transition-opacity duration-300 lg:grid-cols-2"

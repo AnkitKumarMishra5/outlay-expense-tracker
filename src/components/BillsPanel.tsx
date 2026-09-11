@@ -58,11 +58,14 @@ export default function BillsPanel({
   bills,
   onSettle,
   cards,
+  activeId,
 }: {
   bills: Bill[];
   onSettle?: (id: string, settled: boolean) => Promise<void> | void;
   /** Only used to pad the all-clear fan when a cycle had one or two bills. */
   cards?: CardRow[];
+  /** Set when the dashboard is filtered to a single card. */
+  activeId?: string | null;
 }) {
   const now = today();
   const toast = useToast();
@@ -110,10 +113,14 @@ export default function BillsPanel({
     const faces = [...best.values()]
       .sort((a, b) => b.amount - a.amount)
       .map((v) => ({ id: v.bill.card_id, bankId: v.bill.bank_id, label: v.bill.card_label, last4: v.bill.last4 }));
-    for (const c of cards ?? []) {
-      if (faces.length >= 3) break;
-      if (faces.some((f) => f.id === c.id)) continue;
-      faces.push({ id: c.id, bankId: c.bank_id, label: c.card_label, last4: c.last4 });
+    // Padding only makes sense for the whole wallet. Filtered to one card, the
+    // other cards are not what was settled and have no business being shown.
+    if (!activeId) {
+      for (const c of cards ?? []) {
+        if (faces.length >= 3) break;
+        if (faces.some((f) => f.id === c.id)) continue;
+        faces.push({ id: c.id, bankId: c.bank_id, label: c.card_label, last4: c.last4 });
+      }
     }
     return faces.slice(0, 4);
   })();
@@ -261,10 +268,12 @@ export default function BillsPanel({
             </div>
             <span className="allclear-sweep" />
           </div>
-          <p className="allclear-title">Every bill is settled</p>
+          <p className="allclear-title">
+            {current.length === 1 ? "This bill is settled" : "Every bill is settled"}
+          </p>
           <p className="allclear-sub">
-            <span className="tabular">{inr(clearedTotal)}</span> cleared across {current.length} bill
-            {current.length === 1 ? "" : "s"} this cycle. Nothing is owed.
+            <span className="tabular">{inr(clearedTotal)}</span> cleared
+            {current.length === 1 ? "" : ` across ${current.length} bills`} this cycle. Nothing is owed.
           </p>
         </div>
       )}
