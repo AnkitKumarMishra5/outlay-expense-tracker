@@ -5,21 +5,33 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import CreditCard from "@/components/CreditCard";
 import DashboardView from "@/components/DashboardView";
-import { Range, RANGE_LABELS } from "@/lib/format";
-import { Analytics, CardRow } from "@/lib/types";
+import DashboardSkeleton from "@/components/DashboardSkeleton";
+import type { CardStat } from "@/components/CardRail";
+import { billMonth } from "@/lib/bills";
+import { monthKey, monthTitle, Range, RANGE_LABELS } from "@/lib/format";
+import { Analytics, CardRow, Timeline } from "@/lib/types";
 import { getJson } from "@/lib/api";
 
 
 export default function Dashboard() {
   const router = useRouter();
-  const [range, setRange] = useState<Range>("3m");
+  // What the API falls back to when no month is chosen.
+  const range: Range = "all";
+  // Opens on this month, or the newest month holding anything if it is empty.
+  const [month, setMonth] = useState<string | null>(() => monthKey());
+  const [pinned, setPinned] = useState(false);
+  const chooseMonth = useCallback((m: string | null) => {
+    setPinned(true);
+    setMonth(m);
+  }, []);
   const [cardId, setCardId] = useState<string | null>(null);
   const [cards, setCards] = useState<CardRow[]>([]);
   const [data, setData] = useState<Analytics | null>(null);
+  const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [checked, setChecked] = useState(false);
   const [loadedKey, setLoadedKey] = useState("");
   const [railRows, setRailRows] = useState<Analytics["byCard"]>([]);
-  const queryKey = `${range}|${cardId ?? "all"}`;
+  const queryKey = `${month ?? range}|${cardId ?? "all"}`;
 
   const loadCards = useCallback(() => {
     getJson<{ cards: CardRow[] }>("/api/cards").then((d) => d && setCards(d.cards ?? []));
@@ -38,21 +50,46 @@ export default function Dashboard() {
 
 
   const load = useCallback(() => {
-    const q = new URLSearchParams({ range });
+    const q = new URLSearchParams(month ? { month } : { range });
     if (cardId) q.set("cardId", cardId);
-    const key = `${range}|${cardId ?? "all"}`;
+    const key = `${month ?? range}|${cardId ?? "all"}`;
     getJson<Analytics>(`/api/analytics?${q}`, onExpired).then((d) => {
       if (!d || !d.totals) return;
+      const months = d.months ?? [];
+      if (!pinned && month && months.length && !months.includes(month)) {
+        setPinned(true);
+        setMonth(months[0]);
+        return;
+      }
       setData(d);
       setLoadedKey(key);
     });
-  }, [range, cardId, onExpired]);
+  }, [month, range, cardId, onExpired, pinned]);
+
+  // Loaded on its own so the recurring scan and the trend do not hold up the
+  // figures, bills and breakdowns above them.
+  const loadTimeline = useCallback(() => {
+    const q = new URLSearchParams(month ? { month } : {});
+    if (cardId) q.set("cardId", cardId);
+    let live = true;
+    getJson<Timeline>(`/api/analytics/timeline?${q}`, onExpired).then((d) => {
+      if (live && d) setTimeline(d);
+    });
+    return () => {
+      live = false;
+    };
+  }, [month, cardId, onExpired]);
+  useEffect(() => {
+    if (!checked) return;
+    return loadTimeline();
+  }, [checked, loadTimeline]);
 
   const loadRail = useCallback(() => {
-    getJson<Analytics>(`/api/analytics?range=${range}`, onExpired).then((d) => {
+    const q = new URLSearchParams(month ? { month } : { range });
+    getJson<Analytics>(`/api/analytics?${q}`, onExpired).then((d) => {
       if (d?.byCard) setRailRows(d.byCard);
     });
-  }, [range, onExpired]);
+  }, [month, range, onExpired]);
   useEffect(() => {
     if (checked) loadRail();
   }, [checked, loadRail]);
@@ -62,33 +99,26 @@ export default function Dashboard() {
 
 
   const cardStats = useMemo(() => {
-    const map: Record<string, { debits: number; txns: number; nextDue: string | null; nextDueAmount: number | null }> = {};
+    const billed = new Map<string, number>();
+    for (const d of data?.dues ?? []) {
+      if (d.txn_count == null) continue;
+      if (month && billMonth(d) !== month) continue;
+      billed.set(d.card_id, (billed.get(d.card_id) ?? 0) + Number(d.txn_count));
+    }
+    const map: Record<string, CardStat> = {};
     for (const row of railRows) {
       map[row.card_id] = {
         debits: Number(row.debits),
         txns: Number(row.txns ?? 0),
         nextDue: row.next_due ?? null,
         nextDueAmount: row.next_due_amount != null ? Number(row.next_due_amount) : null,
+        billedTxns: billed.get(row.card_id) ?? null,
       };
     }
     return map;
-  }, [railRows]);
+  }, [railRows, data?.dues, month]);
 
-  if (!checked || !data)
-    return (
-      <div className="space-y-6" aria-busy="true" aria-label="Loading dashboard">
-        <div className="shimmer h-9 w-48" />
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="shimmer h-20" />
-          ))}
-        </div>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="shimmer h-72" />
-          <div className="shimmer h-72" />
-        </div>
-      </div>
-    );
+  if (!checked || !data) return <DashboardSkeleton />;
 
   const empty = Number(data.totals.txns) === 0 && !cardId && range === "all";
   const nothingYet = Number(data.totals.txns) === 0;
@@ -148,8 +178,10 @@ export default function Dashboard() {
       title="Dashboard"
       cards={cards}
       data={data}
-      range={range}
-      onRange={setRange}
+      timeline={timeline}
+      month={month}
+      months={data.months ?? []}
+      onMonth={chooseMonth}
       activeId={cardId}
       onSelectCard={setCardId}
       cardStats={cardStats}
@@ -158,7 +190,7 @@ export default function Dashboard() {
       stats={
         cardId && loadedKey === queryKey
           ? {
-              rangeLabel: RANGE_LABELS[range],
+              rangeLabel: month ? monthTitle(month) : RANGE_LABELS[range],
               debits: Number(data.totals.debits),
               credits: Number(data.totals.credits),
               fees: Number(data.totals.fees),
@@ -185,7 +217,7 @@ export default function Dashboard() {
             <p className="max-w-md text-sm text-ink2">
               {empty
                 ? "Upload a statement PDF. Outlay unlocks it, verifies it against the printed totals, and breaks down the spend here."
-                : "Widen the range, or upload the statements covering this period."}
+                : "Pick another month, or upload the statements covering this one."}
             </p>
             <Link href="/upload" className="mt-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90">
               Upload a statement
@@ -194,10 +226,6 @@ export default function Dashboard() {
         ) : null
       }
       onSettle={settle}
-      onTxnChanged={() => {
-        load();
-        loadRail();
-      }}
     />
   );
 }

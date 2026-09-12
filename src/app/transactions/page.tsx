@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import BankBadge from "@/components/BankBadge";
 import { useToast } from "@/components/Toasts";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CATEGORIES } from "@/lib/categories";
 import CategorySelect from "@/components/CategorySelect";
-import { bankById } from "@/lib/banks";
+import AiSweep from "@/components/AiSweep";
 import { inr } from "@/lib/format";
 import { CardRow } from "@/lib/types";
 import { getJson } from "@/lib/api";
@@ -54,7 +55,7 @@ export default function TransactionsPage() {
   const [cards, setCards] = useState<CardRow[]>([]);
   const [statements, setStatements] = useState<StatementRow[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
-  const [summary, setSummary] = useState({ total: 0, debits: 0, credits: 0 });
+  const [summary, setSummary] = useState({ total: 0, debits: 0, credits: 0, payments: 0 });
   const [more, setMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -103,12 +104,13 @@ export default function TransactionsPage() {
       total: number;
       debits: number;
       credits: number;
+      payments: number;
     }>(`/api/transactions?${query}`, onExpired).then((d) => {
       setLoading(false);
       if (!d) return;
       setRows((prev) => (d.offset > 0 ? [...prev, ...d.transactions] : d.transactions));
       setMore(d.more);
-      setSummary({ total: d.total, debits: d.debits, credits: d.credits });
+      setSummary({ total: d.total, debits: d.debits, credits: d.credits, payments: d.payments ?? 0 });
     });
   }, [query, onExpired]);
 
@@ -143,17 +145,26 @@ export default function TransactionsPage() {
         <p className="text-sm text-ink2">
           <span className="tabular">{summary.total}</span> row{summary.total === 1 ? "" : "s"}
           <span className="text-muted"> · </span>
-          <span className="tabular">{inr(summary.debits)}</span> spent
-          {summary.credits > 0 && (
+          <span className="tabular">{inr(summary.debits)}</span> spends
+          {summary.payments > 0 && (
             <>
               <span className="text-muted"> · </span>
-              <span className="tabular text-good">{inr(summary.credits)}</span> credited
+              <span className="tabular text-good">{inr(summary.payments)}</span> paid back
+            </>
+          )}
+          {summary.credits - summary.payments > 1 && (
+            <>
+              <span className="text-muted"> · </span>
+              <span className="tabular text-good">{inr(summary.credits - summary.payments)}</span> credits &amp; refunds
             </>
           )}
         </p>
-        <Link href="/statements" className="ml-auto text-xs text-accent hover:underline">
-          Statements
-        </Link>
+        <span className="ml-auto flex flex-wrap items-center gap-3">
+          <AiSweep onApplied={load} />
+          <Link href="/statements" className="text-xs text-accent hover:underline">
+            Statements
+          </Link>
+        </span>
       </div>
 
       <div className="card p-4">
@@ -259,7 +270,7 @@ export default function TransactionsPage() {
                   </td>
                   <td className="hidden whitespace-nowrap py-2 pr-4 text-xs md:table-cell">
                     <span className="inline-flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-sm" style={{ background: bankById(r.bank_id).color }} />
+                      <BankBadge bankId={r.bank_id} size={20} />
                       {r.card_label}
                       <span className="text-muted">•••• {r.last4 ?? "????"}</span>
                     </span>

@@ -46,7 +46,7 @@ export default function PaidToggle({
     if (res.ok) {
       if (paid) {
         play("unsettle");
-        toast.push("Back in what is owed", { tone: "info" });
+        toast.push("Back to outstanding", { tone: "info" });
       } else {
         celebrate({ kind: "settled", card, amount: totalDue ?? null, detail: dueDate ? `Was due ${dueDate}` : undefined });
       }
@@ -62,7 +62,7 @@ export default function PaidToggle({
   const state = paid
     ? { text: `Settled${paidAt ? ` on ${localDay(paidAt)}` : ""}`, tone: "text-good border-good/40 bg-good/10" }
     : nothingOwed
-      ? { text: "Settled, nothing was owed", tone: "text-good border-good/40 bg-good/10" }
+      ? { text: "Settled, nothing was due", tone: "text-good border-good/40 bg-good/10" }
       : overdue
         ? { text: `Overdue by ${Math.abs(days!)} day${Math.abs(days!) === 1 ? "" : "s"}`, tone: "text-bad border-bad/40 bg-bad/10" }
         : days !== null

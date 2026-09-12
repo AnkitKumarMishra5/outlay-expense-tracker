@@ -21,6 +21,17 @@ export interface Subscription {
   firstSeen: string;
   lastSeen: string;
   perYear: number;
+  /** Every charge behind the pattern, oldest first. */
+  history: { date: string; amount: number; description: string }[];
+  /** When the next one is due, projected from the cadence. */
+  nextDue: string;
+}
+
+/** The same day-count arithmetic the cadence was worked out from. */
+function addDays(day: string, days: number): string {
+  const d = new Date(`${day}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 const NOISE =
@@ -89,6 +100,8 @@ export function detectSubscriptions(rows: RecurringInput[]): Subscription[] {
       firstSeen: sorted[0].date,
       lastSeen: last.date,
       perYear: Math.round(typical * (cadence === "monthly" ? 12 : 1) * 100) / 100,
+      history: sorted.map((r) => ({ date: r.date, amount: r.amount, description: r.description })),
+      nextDue: addDays(last.date, Math.round(gap)),
     });
   }
 

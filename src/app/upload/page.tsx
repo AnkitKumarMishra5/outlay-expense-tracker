@@ -420,8 +420,24 @@ export default function Upload() {
                       {item.file.name}
                     </span>
                     {item.parsed && (
-                      <span className="text-xs text-muted tabular">
-                        {item.parsed.transactions.length} txns · {inr(item.parsed.transactions.filter((t) => t.type === "debit").reduce((a, t) => a + t.amount, 0))}
+                      // The amount the bill comes to is the headline figure on
+                      // the statement, so it is the headline figure here too.
+                      <span className="flex shrink-0 items-baseline gap-1.5">
+                        <span className="text-[11px] text-muted tabular">
+                          {item.parsed.transactions.length} txns
+                        </span>
+                        <span className="text-base font-semibold tracking-tight text-ink tabular sm:text-lg">
+                          {item.parsed.summary.totalDue != null
+                            ? inr(item.parsed.summary.totalDue)
+                            : inr(
+                                item.parsed.transactions
+                                  .filter((t) => t.type === "debit")
+                                  .reduce((a, t) => a + t.amount, 0)
+                              )}
+                        </span>
+                        <span className="text-[11px] text-muted">
+                          {item.parsed.summary.totalDue != null ? "due" : "spends"}
+                        </span>
                       </span>
                     )}
                     <button
@@ -508,6 +524,38 @@ export default function Upload() {
                           >
                             Wrong card? Choose a different one
                           </button>
+                          {(() => {
+                            const due = item.parsed.summary.dueDate;
+                            return (
+                            <label
+                              className={`flex flex-wrap items-center gap-2 rounded-lg border px-2.5 py-2 text-xs ${
+                                due ? "border-line text-ink2" : "border-warn/40 bg-warn/10 text-warn"
+                              }`}
+                            >
+                              <span>
+                                {due
+                                  ? "Payment due date, as read off the statement. Correct it here if it looks wrong."
+                                  : "No payment due date was printed where Outlay could read it. Add it so this bill can be tracked."}
+                              </span>
+                              <input
+                                type="date"
+                                aria-label="Payment due date"
+                                value={item.parsed.summary.dueDate ?? ""}
+                                onChange={(e) => {
+                                  const dueDate = e.target.value || undefined;
+                                  setItems((prev) =>
+                                    prev.map((x) =>
+                                      x.id === item.id && x.parsed
+                                        ? { ...x, parsed: { ...x.parsed, summary: { ...x.parsed.summary, dueDate } } }
+                                        : x
+                                    )
+                                  );
+                                }}
+                                className="rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+                              />
+                            </label>
+                            );
+                          })()}
                           {ai.configured && item.cardId && (
                             aiLeft(item.cardId) > 0 ? (
                               <label className="flex cursor-pointer flex-wrap items-center gap-2 text-xs text-ink2">

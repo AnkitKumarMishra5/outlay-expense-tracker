@@ -2,6 +2,7 @@ import { db } from "./db";
 import { aiCategorize } from "./ai";
 import { AiState, aiConfigured, aiState, releaseAi, reserveAi } from "./aiQuota";
 import { revalidate } from "./revalidate";
+import { loadRules } from "./categoryRules";
 
 export interface AiChange {
   id: string;
@@ -96,7 +97,7 @@ export async function reviewStatements(userId: string, statementIds: string[]): 
     };
   }
 
-  const outcome = await aiCategorize(rows);
+  const outcome = await aiCategorize(rows, await loadRules(c.execute, userId));
   if (outcome.status !== "ok") {
     // Nothing came back, so nothing is charged. A model that answers badly is
     // not the reader's fault, and taking one of their two reviews for it would

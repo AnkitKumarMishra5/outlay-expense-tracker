@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { LayoutGroup, motion } from "motion/react";
+import BankBadge from "./BankBadge";
 import CreditCard from "./CreditCard";
 import CardBack from "./CardBack";
 import ConfirmDelete from "./ConfirmDelete";
@@ -16,15 +17,18 @@ export interface CardStat {
   txns: number;
   nextDue: string | null;
   nextDueAmount: number | null;
+  /** Transactions on this card's statement for the cycle being shown. */
+  billedTxns?: number | null;
 }
 
-type SortMode = "bank" | "spend" | "due" | "name";
+type SortMode = "bank" | "pending" | "due" | "name";
 
-const SORTS: { value: SortMode; label: string }[] = [
-  { value: "bank", label: "Bank" },
-  { value: "spend", label: "Most spent" },
-  { value: "due", label: "Due date" },
-  { value: "name", label: "A to Z" },
+/** Two money sorts that mean different things, then the plain ones. */
+const SORTS: { value: SortMode; label: string; title: string }[] = [
+  { value: "due", label: "Due", title: "What each card billed this cycle, largest first" },
+  { value: "pending", label: "Pending", title: "What is still unpaid, largest first" },
+  { value: "bank", label: "Bank", title: "Grouped by bank" },
+  { value: "name", label: "A–Z", title: "By card name" },
 ];
 
 export interface RangeStats {
@@ -73,7 +77,7 @@ export default function CardRail({
   onCardsChanged?: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortMode>("spend");
+  const [sort, setSort] = useState<SortMode>("due");
   const [flipped, setFlipped] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<CardRow | null>(null);
   /** Card ids most recently fronted, newest first. Drives the order behind the hero. */
@@ -81,10 +85,14 @@ export default function CardRail({
   const rowRefs = useRef(new Map<string, HTMLLIElement>());
   const active = cards.find((c) => c.id === activeId) ?? null;
 
+  /** Largest bill outstanding, or the biggest spender while nothing is owed. */
   const topCard = useMemo(() => {
     if (!cards.length) return null;
-    return [...cards].sort(
-      (a, b) => (cardStats?.[b.id]?.debits ?? 0) - (cardStats?.[a.id]?.debits ?? 0)
+    const owing = cards.some((c) => (cardStats?.[c.id]?.nextDueAmount ?? 0) > 0);
+    return [...cards].sort((a, b) =>
+      owing
+        ? (cardStats?.[b.id]?.nextDueAmount ?? 0) - (cardStats?.[a.id]?.nextDueAmount ?? 0)
+        : (cardStats?.[b.id]?.debits ?? 0) - (cardStats?.[a.id]?.debits ?? 0)
     )[0];
   }, [cards, cardStats]);
 
@@ -106,8 +114,14 @@ export default function CardRail({
     return [...ordered, ...behind.values()].slice(0, 2);
   }, [cards, hero, recent]);
 
-  const peak = useMemo(
-    () => Math.max(1, ...cards.map((c) => cardStats?.[c.id]?.debits ?? 0)),
+  /** What the bars are drawn against; falls back to spend when nothing is owed. */
+  const peak = useMemo(() => {
+    const owedPeak = Math.max(0, ...cards.map((c) => cardStats?.[c.id]?.nextDueAmount ?? 0));
+    if (owedPeak > 0) return owedPeak;
+    return Math.max(1, ...cards.map((c) => cardStats?.[c.id]?.debits ?? 0));
+  }, [cards, cardStats]);
+  const peakIsOwed = useMemo(
+    () => cards.some((c) => (cardStats?.[c.id]?.nextDueAmount ?? 0) > 0),
     [cards, cardStats]
   );
 
@@ -125,16 +139,15 @@ export default function CardRail({
       const sa = cardStats?.[a.id];
       const sb = cardStats?.[b.id];
       switch (sort) {
-        case "spend":
+        case "due":
           return (sb?.debits ?? 0) - (sa?.debits ?? 0) || a.card_label.localeCompare(b.card_label);
-        case "due": {
-          const da = sa?.nextDue ?? "";
-          const db = sb?.nextDue ?? "";
-          if (da && db) return da.localeCompare(db) || a.card_label.localeCompare(b.card_label);
-          if (da) return -1;
-          if (db) return 1;
-          return a.card_label.localeCompare(b.card_label);
-        }
+        case "pending":
+          // A card with nothing left to pay sinks below one that has.
+          return (
+            (sb?.nextDueAmount ?? 0) - (sa?.nextDueAmount ?? 0) ||
+            (sb?.debits ?? 0) - (sa?.debits ?? 0) ||
+            a.card_label.localeCompare(b.card_label)
+          );
         case "name":
           return a.card_label.localeCompare(b.card_label);
         case "bank":
@@ -203,15 +216,15 @@ export default function CardRail({
     const spend = stat?.debits ?? 0;
     const isActive = c.id === activeId;
     const due = stat?.nextDue ?? null;
+    const owed = stat?.nextDueAmount ?? null;
+    const txnCount = stat?.billedTxns ?? (stat?.txns != null ? stat.txns : null);
     const left = due ? daysUntil(due) : null;
     const dueTone =
       left === null ? "" : left < 0 ? "text-bad font-medium" : left <= 2 ? "text-bad" : left <= 7 ? "text-warn" : "text-ink2";
     const txnText = stat?.txns ? `${stat.txns} txn${stat.txns === 1 ? "" : "s"}` : "no spend";
-    const share = peak > 0 ? Math.round((spend / peak) * 100) : 0;
     const title = [
-      spend > 0 ? `${inr(spend)} spent, ${share}% of your highest card` : "No spend this period",
-      spend > 0 ? txnText : null,
-      due ? `${stat?.nextDueAmount != null ? inr(stat.nextDueAmount) : "Payment"} ${dueLabel(due)}` : null,
+      owed != null ? `${inr(owed)} outstanding${due ? `, ${dueLabel(due)}` : ""}` : "Nothing outstanding",
+      spend > 0 ? `${inr(spend)} spent on ${txnText}` : "No spend this period",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -236,7 +249,7 @@ export default function CardRail({
                 {
                   "--edge": bank.color,
                   "--edge2": bank.c2,
-                  "--pct": Math.max(0.02, spend / peak),
+                  "--pct": Math.max(0.02, (peakIsOwed ? (owed ?? 0) : spend) / peak),
                 } as React.CSSProperties
               }
               title={title}
@@ -245,23 +258,35 @@ export default function CardRail({
               <span className="min-w-0 flex-1">
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="truncate text-[13px] font-medium text-ink">{c.card_label}</span>
-                  <span className="tabular shrink-0 text-[12px] text-ink2">{spend > 0 ? inr(spend) : "—"}</span>
-                </span>
-                <span className="mt-0.5 flex items-center justify-between gap-2">
-                  <span className="truncate text-[10px] uppercase tracking-wider text-muted">
-                    {bank.short} · •••• {c.last4 ?? "????"}
-                  </span>
-                  {due ? (
-                    <span className={`shrink-0 text-[10px] ${dueTone}`}>
-                      {left !== null && left <= 7 && <span className="spine-due-dot" aria-hidden />}
-                      {dueLabel(due)}
-                      {stat?.nextDueAmount != null && (
-                        <span className="tabular text-muted"> · {inr(stat.nextDueAmount)}</span>
-                      )}
+                  {owed != null ? (
+                    <span className={`shrink-0 text-[13px] font-semibold tabular ${dueTone || "text-ink"}`}>
+                      {inr(owed)}
                     </span>
                   ) : (
-                    <span className="shrink-0 text-[10px] text-muted">{txnText}</span>
+                    <span className="shrink-0 text-[11px] text-muted">settled</span>
                   )}
+                </span>
+                <span className="mt-0.5 flex items-center justify-between gap-2">
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <BankBadge bankId={c.bank_id} size={16} />
+                    <span className="text-[10px] uppercase tracking-wider text-muted">
+                      •••• {c.last4 ?? "????"}
+                      {txnCount !== null && (
+                        <>
+                          {" · "}
+                          {txnCount} txn{txnCount === 1 ? "" : "s"}
+                        </>
+                      )}
+                    </span>
+                  </span>
+                  <span className="min-w-0 truncate text-right text-[10px] text-muted">
+                    {due ? (
+                      <span className={dueTone}>
+                        {left !== null && left <= 7 && <span className="spine-due-dot" aria-hidden />}
+                        {dueLabel(due)}
+                      </span>
+                    ) : null}
+                  </span>
                 </span>
                 <span className="spine-track" aria-hidden>
                   <span className="spine-fill" />
@@ -338,20 +363,23 @@ export default function CardRail({
             </div>
           </div>
           </div>
-          <p className="mt-1.5 text-center text-[10px] uppercase tracking-widest text-muted">
-            {active ? (flipped ? "click to flip back" : "click card for period figures") : "most spent this period"}
-          </p>
+          {active && (
+            <p className="mt-1.5 text-center text-[10px] uppercase tracking-widest text-muted">
+              {flipped ? "click to flip back" : "click card for period figures"}
+            </p>
+          )}
         </div>
       )}
 
       {cards.length > 1 && (
-      <div className="mb-3 flex flex-wrap gap-1">
+      <div className="mb-3 flex gap-1">
         {SORTS.map((option) => (
           <button
             key={option.value}
             onClick={() => changeSort(option.value)}
             aria-pressed={sort === option.value}
-            className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+            title={option.title}
+            className={`flex-1 whitespace-nowrap rounded-md border px-1.5 py-1 text-[11px] transition-colors ${
               sort === option.value
                 ? "border-accent bg-accentSoft text-accent"
                 : "border-line text-ink2 hover:border-muted"
@@ -406,7 +434,7 @@ export default function CardRail({
                         <span className="bank-chip" style={{ background: bank.color }} aria-hidden />
                         <span className="bank-name">{bank.name}</span>
                         <span className="bank-count">{g.rows.length}</span>
-                        <span className="bank-spend tabular">{g.spend > 0 ? inr(g.spend) : "—"}</span>
+                        <span className="bank-spend tabular">{g.spend > 0 ? inr(g.spend) : "\u2013"}</span>
                       </p>
                       <ul className="bank-fan">{g.rows.map((c, i) => renderRow(c, i))}</ul>
                     </motion.li>

@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { decrypt, decryptOrNull, encrypt } from "@/lib/crypto";
 import { candidatePasswords, inferPattern } from "@/lib/passwords";
-import { unlockAndExtract } from "@/lib/pdf";
+import { hasNumbers, unlockAndExtract } from "@/lib/pdf";
 import { heuristicParse } from "@/lib/parser";
 import { runChecks, PriorStatementInfo } from "@/lib/checks";
 import { currentUserId, unauthorized } from "@/lib/auth";
 import { detectCard } from "@/lib/detect";
+import { loadRules } from "@/lib/categoryRules";
 
 export const maxDuration = 60;
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -126,7 +127,22 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const parsed = heuristicParse(extracted.text);
+  const parsed = heuristicParse(extracted.text, extracted.layout, await loadRules(c.execute, userId));
+
+  // A statement whose font maps digits to nothing extracts as words with every
+  // number missing. Calling that "not a statement" sends people hunting for the
+  // wrong problem, so say what is actually wrong.
+  if (parsed.transactions.length === 0 && !hasNumbers(extracted.text)) {
+    return NextResponse.json(
+      {
+        notAStatement: true,
+        filename: file.name,
+        error:
+          "This PDF's numbers are not stored as text, so nothing can be read from it. The words come through but every amount and date is missing. Ask your bank for the plain statement rather than the print-styled one, or send a version that is not a scan.",
+      },
+      { status: 422 }
+    );
+  }
 
   if (!detection.looksLikeStatement && parsed.transactions.length === 0) {
     return NextResponse.json(

@@ -1,4 +1,4 @@
-import { CATEGORIES } from "./categories";
+import { CATEGORIES, type CategoryRule } from "./categories";
 import { redact } from "./parser";
 
 const CATEGORY_SYSTEM = `You assign spending categories to Indian credit card statement rows.
@@ -7,7 +7,19 @@ Return STRICT JSON {"categories":[{"i":number,"c":"category"}]} covering every i
 c must be exactly one of: ${CATEGORIES.join(", ")}.
 "EMI & Loans" is only for actual instalment or loan rows, never for a purchase that was
 merely flagged as EMI eligible. Card fees, interest and taxes are "Fees & Charges".
-Payments to the card and refunds are "Payments & Refunds".`;
+Payments to the card and refunds are "Payments & Refunds".
+Tax paid through the card (income tax, advance tax, GST payments, challans) is "Taxes";
+GST charged on a card fee stays "Fees & Charges".`;
+
+/** The reader's own keyword mappings, stated to the model as hard rules. */
+function rulesPrompt(rules: CategoryRule[]): string {
+  if (!rules.length) return "";
+  const lines = rules
+    .slice(0, 200)
+    .map((r) => `- a description containing "${r.keyword}" is "${r.category}"`)
+    .join("\n");
+  return `\n\nThe reader has set these rules. They override everything above:\n${lines}`;
+}
 
 /**
   * Rows per model call. Set by the model's output ceiling, not by taste: one
@@ -24,7 +36,11 @@ export type AiOutcome =
   /** The model answered but the answer could not be read. */
   | { status: "unusable" };
 
-async function callModel(key: string, payload: { i: number; d: string }[]): Promise<unknown[] | "unreachable" | "unusable"> {
+async function callModel(
+  key: string,
+  payload: { i: number; d: string }[],
+  system: string
+): Promise<unknown[] | "unreachable" | "unusable"> {
   let res: Response;
   try {
     res = await fetch(`${("https://api.openai.com/v1").replace(/\/$/, "")}/chat/completions`, {
@@ -35,7 +51,7 @@ async function callModel(key: string, payload: { i: number; d: string }[]): Prom
         temperature: 0,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: CATEGORY_SYSTEM },
+          { role: "system", content: system },
           { role: "user", content: JSON.stringify(payload) },
         ],
       }),
@@ -58,14 +74,17 @@ async function callModel(key: string, payload: { i: number; d: string }[]): Prom
  * Ask the model for a category per row. Only the redacted merchant description
  * leaves the server, never amounts, dates, names or card digits.
  */
-export async function aiCategorize(rows: { id: string; description: string }[]): Promise<AiOutcome> {
+export async function aiCategorize(
+  rows: { id: string; description: string }[],
+  rules: CategoryRule[] = []
+): Promise<AiOutcome> {
   const key = process.env.OPENAI_API_KEY;
   if (!key || rows.length === 0) return { status: "unreachable" };
   const out = new Map<string, string>();
   for (let start = 0; start < rows.length; start += CHUNK) {
     const slice = rows.slice(start, start + CHUNK);
     const payload = slice.map((r, i) => ({ i, d: redact(r.description).slice(0, 120) }));
-    const answer = await callModel(key, payload);
+    const answer = await callModel(key, payload, CATEGORY_SYSTEM + rulesPrompt(rules));
     if (answer === "unreachable") return start === 0 ? { status: "unreachable" } : { status: "unusable" };
     if (answer === "unusable") return { status: "unusable" };
     for (const entry of answer as { i?: number; c?: string }[]) {

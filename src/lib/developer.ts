@@ -2,7 +2,7 @@ export const DEVELOPER = {
   name: "Ankit Kumar Mishra",
   role: "Creator and developer of Outlay",
   quote:
-    "A statement tells you what you owe. It never tells you what you spent, and it never tells you the annual fee came back. I wanted the reconciliation I would run on a production ledger, running every month on my own.",
+    "A statement from every card, never in the same place, and no picture of the month anywhere. I wanted one screen that holds the whole wallet: every card ranked by what it billed, every bill still to pay, where the money actually went, and what quietly repeats each month. Outlay is that screen, and it checks the bank's arithmetic on the way in.",
   email: "akmishra5514@gmail.com",
   github: "https://github.com/AnkitKumarMishra5",
   linkedin: "https://www.linkedin.com/in/ankitkumarmishra/",

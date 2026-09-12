@@ -14,28 +14,28 @@ Scope is narrow on purpose: credit card statements only. Not budgeting, not net 
 
 ## A look at it
 
-**The dashboard.** Every card you hold, ranked by spend, with the bills of the current cycle and how many are still outstanding.
+**The dashboard.** Pick a month and every card you hold lines up by what it billed that cycle, with the bills still outstanding, how the bill built up day by day, and where the money went.
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" width="900" alt="Dashboard: nineteen cards ranked by spend, four headline figures, a bills panel showing seventeen of nineteen settled this cycle, spend trend and category split">
+  <img src="docs/screenshots/dashboard.png" width="900" alt="Dashboard: cards ranked by what they billed this cycle, five headline figures, a bills panel showing five of eight settled, how the bill built up and the category split">
 </p>
 
-**A statement, verified.** Twelve checks run before anything is saved, and the result is stored with the statement. Every category is a dropdown, so a wrong guess takes one click to fix.
+**A statement, verified.** Twelve checks run before anything is saved, and the result is stored with the statement. Fees get flagged rather than buried. Every category is a dropdown, so a wrong guess takes one click to fix.
 
 <p align="center">
-  <img src="docs/screenshots/statement.png" width="900" alt="Statement detail: verification checks with passes and warnings, then the transaction list with a colour-coded category dropdown on every row">
+  <img src="docs/screenshots/statement.png" width="900" alt="Statement detail: spend, credits, total due and due date, eight verification checks with an annual fee flagged as a warning, then the transaction list with a colour-coded category dropdown on every row">
 </p>
 
-**The calendar.** Daily spend and every payment due on one grid. Amber means a bill falls due, green means it is settled.
+**The calendar.** Daily spend and every payment due on one grid, scoped to the statement cycle rather than the calendar month. Each day carries the cards it was spent on. Amber means a bill falls due, green means it is settled.
 
 <p align="center">
-  <img src="docs/screenshots/calendar.png" width="900" alt="Calendar for September: spend heat per day, amber badges for bills due and green ticks for settled ones">
+  <img src="docs/screenshots/calendar.png" width="900" alt="Calendar: spend heat per day with two-letter bank tags for the cards used, amber badges for bills due and green ticks for settled ones">
 </p>
 
-**Every transaction, one page.** Filter by card, by statement, by category or by text, and correct a category inline.
+**Every transaction, one page.** Filter by card, by statement, by category or by text, and correct a category inline. Or hand the whole account to the model once and review every change before it lands.
 
 <p align="center">
-  <img src="docs/screenshots/transactions.png" width="900" alt="Transactions page: filters for search, card, statement and category, and a table of every transaction across every card">
+  <img src="docs/screenshots/transactions.png" width="900" alt="Transactions page: filters for search, card, statement and category, an account-wide AI recategorise button, and a table of every transaction across every card">
 </p>
 
 **Statements.** What has been read, what it checked out at, and what is still to pay.

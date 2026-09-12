@@ -9,6 +9,7 @@ import { inr } from "@/lib/format";
 import { Check } from "@/lib/types";
 import { useReveal } from "@/lib/useReveal";
 import { getJson } from "@/lib/api";
+import { play } from "@/lib/sound";
 
 interface Row {
   id: string;
@@ -19,6 +20,7 @@ interface Row {
   period_end: string | null;
   due_date: string | null;
   total_due: number | null;
+  statement_date: string | null;
   paid_at: string | null;
   total_debits: number;
   total_credits: number;
@@ -29,6 +31,7 @@ interface Row {
 
 export default function Statements() {
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
   const listRef = useReveal<HTMLUListElement>([rows]);
   const router = useRouter();
   const load = useCallback(() => {
@@ -39,6 +42,23 @@ export default function Statements() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Deleting takes the statement's transactions with it, so it asks first and
+  // says exactly what is going.
+  async function remove(s: Row) {
+    const what = `${s.card_label} · ${s.txn_count} transaction${s.txn_count === 1 ? "" : "s"}`;
+    if (!window.confirm(`Delete this statement?\n\n${what}\n\nIts transactions are deleted too. This cannot be undone.`))
+      return;
+    setRemoving(s.id);
+    const res = await fetch(`/api/statements/${s.id}`, { method: "DELETE" }).catch(() => null);
+    setRemoving(null);
+    if (res?.ok) {
+      play("delete");
+      setRows((prev) => prev?.filter((r) => r.id !== s.id) ?? prev);
+    } else {
+      window.alert("That statement could not be deleted. Reload and try again.");
+    }
+  }
 
   if (!rows)
     return (
@@ -75,7 +95,12 @@ export default function Statements() {
                       {s.card_label} {s.last4 && <span className="text-xs text-muted tabular">•••• {s.last4}</span>}
                     </p>
                     <p className="text-xs text-muted">
-                      {s.period_start ? `${s.period_start} → ${s.period_end}` : `uploaded ${s.created_at.slice(0, 10)}`} · {s.txn_count} transactions
+                      {s.period_start
+                        ? `${s.period_start} → ${s.period_end}`
+                        : s.statement_date
+                          ? `statement ${s.statement_date}`
+                          : `uploaded ${s.created_at.slice(0, 10)}`}{" "}
+                      · {s.txn_count} transactions
                     </p>
                     <span className="mt-1.5 inline-flex">
                       <PaidToggle
@@ -95,7 +120,38 @@ export default function Statements() {
                       {warns > 0 && <span className="rounded bg-warn/15 px-1.5 py-0.5 font-medium text-warn">{warns} warning{warns === 1 ? "" : "s"}</span>}
                       {fails === 0 && warns === 0 && <span className="rounded bg-good/15 px-1.5 py-0.5 font-medium text-good">all clear</span>}
                     </div>
-                    <span className="font-medium tabular">{inr(Number(s.total_debits))}</span>
+                    {/* What the bill came to, the way the statement leads
+                        with it; spend only when no total was printed. */}
+                    <span className="text-right">
+                      <span className="block font-medium tabular">
+                        {inr(Number(s.total_due ?? s.total_debits))}
+                      </span>
+                      <span className="block text-[10px] uppercase tracking-wider text-muted">
+                        {s.total_due != null ? "due" : "spends"}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Delete the ${s.card_label} statement`}
+                      title="Delete this statement"
+                      disabled={removing === s.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        remove(s);
+                      }}
+                      className="rounded-lg border border-line p-1.5 text-muted transition-colors hover:border-bad/50 hover:text-bad disabled:opacity-40"
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path
+                          d="M4 7h16M10 4h4M9 7v12m6-12v12M6 7l1 13h10l1-13"
+                          stroke="currentColor"
+                          strokeWidth="1.7"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
                   </div>
                 </Link>
               </li>

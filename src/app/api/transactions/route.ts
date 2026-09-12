@@ -5,6 +5,9 @@ import { decryptOrNull } from "@/lib/crypto";
 
 const PAGE = 50;
 
+/** Paying the card back. Everything else a card credits is a refund. */
+const PAYMENT_RE = "payment received|payment thank|cc payment|card payment|bbps|autopay|neft|imps|upi credit|payment - ";
+
 export async function GET(req: NextRequest) {
   const userId = await currentUserId(req);
   if (!userId) return unauthorized();
@@ -27,6 +30,15 @@ export async function GET(req: NextRequest) {
   if (type === "debit" || type === "credit") add("t.type = $?", type);
   const q = p.get("q")?.trim();
   if (q) add("t.description ILIKE $?", `%${q}%`);
+  // A month always means the month a statement was generated in.
+  const month = p.get("month");
+  if (month && /^\d{4}-\d{2}$/.test(month)) {
+    add(
+      `t.statement_id IN (SELECT id FROM statements WHERE user_id = $1
+         AND substr(COALESCE(statement_date, period_end, due_date), 1, 7) = $?)`,
+      month
+    );
+  }
   const from = p.get("from");
   if (from) add("t.txn_date >= $?", from);
   const to = p.get("to");
@@ -36,7 +48,7 @@ export async function GET(req: NextRequest) {
   const offset = Math.max(0, Number(p.get("offset") ?? 0) || 0);
 
   const c = await db();
-  const [rows, totals] = await Promise.all([
+  const [rows, totals, statementMonths] = await Promise.all([
     c.execute(
       `SELECT t.id, t.txn_date, t.description, t.amount, t.type, t.category, t.is_fee,
               t.is_international, t.statement_id,
@@ -48,11 +60,21 @@ export async function GET(req: NextRequest) {
       args
     ),
     c.execute(
+      // Two buckets only: money paid back to the card, and everything else
+      // the card credited.
       `SELECT COUNT(*)::int AS n,
               COALESCE(SUM(CASE WHEN t.type='debit' THEN t.amount END), 0) AS debits,
-              COALESCE(SUM(CASE WHEN t.type='credit' THEN t.amount END), 0) AS credits
+              COALESCE(SUM(CASE WHEN t.type='credit' THEN t.amount END), 0) AS credits,
+              COALESCE(SUM(CASE WHEN t.type='credit' AND t.description ~* $${args.length + 1} THEN t.amount END), 0) AS payments
        FROM transactions t ${W}`,
-      args
+      [...args, PAYMENT_RE]
+    ),
+    c.execute(
+      `SELECT DISTINCT substr(COALESCE(statement_date, period_end, due_date), 1, 7) AS month
+         FROM statements
+        WHERE user_id = $1 AND COALESCE(statement_date, period_end, due_date) IS NOT NULL
+        ORDER BY month DESC`,
+      [userId]
     ),
   ]);
 
@@ -69,5 +91,7 @@ export async function GET(req: NextRequest) {
     total: Number(totals.rows[0].n),
     debits: Number(totals.rows[0].debits),
     credits: Number(totals.rows[0].credits),
+    payments: Number(totals.rows[0].payments),
+    months: statementMonths.rows.map((r) => r.month as string),
   });
 }

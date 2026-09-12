@@ -8,9 +8,10 @@ import DashboardView from "@/components/DashboardView";
 import FindingIllustrations from "@/components/FindingIllustrations";
 import { INVITE_MAILTO } from "@/lib/developer";
 import { DEMO_CARDS } from "@/lib/demo";
-import { demoAnalytics } from "@/lib/demoAnalytics";
-import { Range, RANGE_LABELS } from "@/lib/format";
+import { demoAnalytics, DEMO_MONTHS } from "@/lib/demoAnalytics";
+import { monthTitle } from "@/lib/format";
 import { useReveal } from "@/lib/useReveal";
+import { useSignedIn } from "@/lib/signedIn";
 import { Analytics } from "@/lib/types";
 
 const STEPS = [
@@ -34,13 +35,15 @@ const STEPS = [
 setCardholder(SAMPLE_IDENTITY.name);
 
 export default function Landing() {
-  const [range, setRange] = useState<Range>("3m");
+  // Someone already signed in does not need to be asked to sign in again.
+  const signedIn = useSignedIn();
+  const [month, setMonth] = useState<string | null>(() => DEMO_MONTHS[0] ?? null);
   const [cardIndex, setCardIndex] = useState<number | null>(null);
   const [settledOverride, setSettledOverride] = useState<Record<string, boolean>>({});
   const stepsRef = useReveal<HTMLDivElement>([]);
 
   const applyOverride = useCallback(
-    (a: Analytics): Analytics => {
+    <T extends Analytics>(a: T): T => {
       const dues = a.dues.map((d) => (d.id in settledOverride ? { ...d, settled: settledOverride[d.id] } : d));
       return {
         ...a,
@@ -56,11 +59,14 @@ export default function Landing() {
     [settledOverride]
   );
 
-  const data = useMemo(() => applyOverride(demoAnalytics(range, cardIndex)), [range, cardIndex, applyOverride]);
+  const data = useMemo(
+    () => applyOverride(demoAnalytics("all", cardIndex, month)),
+    [cardIndex, month, applyOverride]
+  );
 
   const cardStats = useMemo(() => {
     const map: Record<string, { debits: number; txns: number; nextDue: string | null; nextDueAmount: number | null }> = {};
-    for (const row of applyOverride(demoAnalytics(range, null)).byCard) {
+    for (const row of applyOverride(demoAnalytics("all", null, month)).byCard) {
       map[row.card_id] = {
         debits: row.debits,
         txns: row.txns,
@@ -69,7 +75,7 @@ export default function Landing() {
       };
     }
     return map;
-  }, [range, applyOverride]);
+  }, [month, applyOverride]);
 
   const activeId = cardIndex === null ? null : DEMO_CARDS[cardIndex].id;
 
@@ -93,68 +99,94 @@ export default function Landing() {
           className="rise mt-7 flex flex-wrap items-center justify-center gap-3"
           style={{ "--d": "180ms" } as React.CSSProperties}
         >
-          <Link
-            href="/register"
-            className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
-          >
-            Create your account
-          </Link>
-          <Link
-            href="/login"
-            className="rounded-lg border border-line px-5 py-2.5 text-sm text-ink2 transition-colors hover:border-muted hover:text-ink"
-          >
-            Sign in
-          </Link>
+          {signedIn ? (
+            <Link
+              href="/dashboard"
+              className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+            >
+              Go to your dashboard
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/register"
+                className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              >
+                Create your account
+              </Link>
+              <Link
+                href="/login"
+                className="rounded-lg border border-line px-5 py-2.5 text-sm text-ink2 transition-colors hover:border-muted hover:text-ink"
+              >
+                Sign in
+              </Link>
+            </>
+          )}
         </div>
         <p className="rise mt-3 text-xs text-muted" style={{ "--d": "240ms" } as React.CSSProperties}>
-          Invite only, and only you can see your statements.{" "}
-          <a href={INVITE_MAILTO} className="text-accent underline underline-offset-2 hover:no-underline">
-            Ask Ankit for a code
-          </a>
-          .
+          {signedIn ? (
+            "You are signed in. Everything below is the demo, not your data."
+          ) : (
+            <>
+              Invite only, and only you can see your statements.{" "}
+              <a href={INVITE_MAILTO} className="text-accent underline underline-offset-2 hover:no-underline">
+                Ask Ankit for a code
+              </a>
+              .
+            </>
+          )}
         </p>
       </section>
 
-      <section>
-        <div className="demo-frame">
-          <div className="demo-ribbon">
-            <span className="demo-dot" aria-hidden />
-            <span className="min-w-0">
-              Live demo running on invented cards and invented spend. Sign up and this same screen fills with your own
-              statements.
-            </span>
-            <Link href="/register" className="ml-auto shrink-0 whitespace-nowrap text-accent hover:underline">
-              Create your account
-            </Link>
-          </div>
+      {/* Someone signed in has their own figures a click away; a demo of
+          invented ones is noise at that point. */}
+      {!signedIn && (
+        <section>
+          <div className="demo-frame">
+            <div className="demo-ribbon">
+              <span className="demo-dot" aria-hidden />
+              <span className="min-w-0">
+                Live demo running on invented cards and invented spend. Sign up and this same screen fills with your own
+                statements.
+              </span>
+              <Link
+                href={signedIn ? "/dashboard" : "/register"}
+                className="ml-auto shrink-0 whitespace-nowrap text-accent hover:underline"
+              >
+                {signedIn ? "Open your dashboard" : "Create your account"}
+              </Link>
+            </div>
 
-          <div className="p-4 sm:p-6">
-            <DashboardView
-              title="Dashboard"
-              demo
-              cards={DEMO_CARDS}
-              data={data}
-              range={range}
-              onRange={setRange}
-              activeId={activeId}
-              onSelectCard={(id) => setCardIndex(id === null ? null : DEMO_CARDS.findIndex((c) => c.id === id))}
-              cardStats={cardStats}
-              viewKey={`${range}-${cardIndex}`}
-              stats={{
-                rangeLabel: RANGE_LABELS[range],
-                debits: Number(data.totals.debits),
-                credits: Number(data.totals.credits),
-                fees: Number(data.totals.fees),
-                txns: Number(data.totals.txns),
-              }}
-              onSettle={(id, settled) => setSettledOverride((prev) => ({ ...prev, [id]: settled }))}
-            />
+            <div className="p-4 sm:p-6">
+              <DashboardView
+                title="Dashboard"
+                demo
+                cards={DEMO_CARDS}
+                data={data}
+                timeline={data}
+                month={month}
+                months={DEMO_MONTHS}
+                onMonth={setMonth}
+                activeId={activeId}
+                onSelectCard={(id) => setCardIndex(id === null ? null : DEMO_CARDS.findIndex((c) => c.id === id))}
+                cardStats={cardStats}
+                viewKey={`${month}-${cardIndex}`}
+                stats={{
+                  rangeLabel: month ? monthTitle(month) : "All time",
+                  debits: Number(data.totals.debits),
+                  credits: Number(data.totals.credits),
+                  fees: Number(data.totals.fees),
+                  txns: Number(data.totals.txns),
+                }}
+                onSettle={(id, settled) => setSettledOverride((prev) => ({ ...prev, [id]: settled }))}
+              />
+            </div>
           </div>
-        </div>
-        <p className="mt-3 text-center text-xs text-muted">
-          Nothing above is real except the software. Click a card, change the range, hover a day, settle a bill.
-        </p>
-      </section>
+          <p className="mt-3 text-center text-xs text-muted">
+            Nothing above is real except the software. Click a card, change the range, hover a day, settle a bill.
+          </p>
+        </section>
+      )}
 
       <section ref={stepsRef} className="grid gap-4 md:grid-cols-3">
         {STEPS.map((s, i) => (
@@ -177,15 +209,26 @@ export default function Landing() {
         <FindingIllustrations />
 
         <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-          <Link
-            href="/register"
-            className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
-          >
-            Start with your own statements
-          </Link>
-          <Link href="/login" className="text-sm text-accent hover:underline">
-            I already have an account
-          </Link>
+          {signedIn ? (
+            <Link
+              href="/upload"
+              className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+            >
+              Upload a statement
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/register"
+                className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              >
+                Start with your own statements
+              </Link>
+              <Link href="/login" className="text-sm text-accent hover:underline">
+                I already have an account
+              </Link>
+            </>
+          )}
         </div>
         <p className="mt-6 text-xs text-muted">
           Statement files are read and thrown away, never saved. Your name, date of birth, card digits and statement

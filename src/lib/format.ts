@@ -54,3 +54,40 @@ export function localDay(iso: string): string {
   if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
   return new Intl.DateTimeFormat("en-CA").format(d);
 }
+
+/** "2026-08" for a date, defaulting to today. */
+export function monthKey(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** The half-open window a month covers: start included, end excluded. */
+export function monthWindow(month: string): { start: string; end: string } {
+  const [y, m] = month.split("-").map(Number);
+  return { start: iso(new Date(y, m - 1, 1)), end: iso(new Date(y, m, 1)) };
+}
+
+/** "August 2026", for the month the dashboard is showing. */
+export function monthTitle(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+}
+
+/** Step a month key forwards or backwards. */
+export function shiftMonth(month: string, by: number): string {
+  const [y, m] = month.split("-").map(Number);
+  return monthKey(new Date(y, m - 1 + by, 1));
+}
+
+/** Chart axis ticks the way they are said here: 1.5k, 80k, 2L, 1.2Cr. */
+export function axisTick(v: number): string {
+  const n = Math.abs(v);
+  if (n >= 1e7) return `${trim(v / 1e7)}Cr`;
+  if (n >= 1e5) return `${trim(v / 1e5)}L`;
+  if (n >= 1000) return `${trim(v / 1000)}k`;
+  return String(Math.round(v));
+}
+
+function trim(n: number): string {
+  const r = Math.round(n * 10) / 10;
+  return Number.isInteger(r) ? String(r) : r.toFixed(1);
+}

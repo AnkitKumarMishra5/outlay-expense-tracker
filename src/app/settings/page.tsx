@@ -6,6 +6,7 @@ import PatternBuilder, { SavedPattern } from "@/components/PatternBuilder";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AddCardForm from "@/components/AddCardForm";
+import CategoryRules from "@/components/CategoryRules";
 import BankBadge from "@/components/BankBadge";
 import { CardRow } from "@/lib/types";
 import { useToast } from "@/components/Toasts";
@@ -262,6 +263,8 @@ export default function Settings() {
           </div>
         )}
       </section>
+
+      <CategoryRules />
 
       <section className="card p-5">
         <h2 className="mb-2 text-sm font-medium text-ink2">Your data</h2>

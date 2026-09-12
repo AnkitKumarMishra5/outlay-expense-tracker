@@ -18,7 +18,7 @@ export default function SessionTimer() {
   const lastBeat = useRef(0);
   const locking = useRef(false);
 
-  const lock = useCallback(
+  const signOut = useCallback(
     async (reason: "expired" | "manual") => {
       if (locking.current) return;
       locking.current = true;
@@ -39,12 +39,12 @@ export default function SessionTimer() {
       }
       const left = expiry - Date.now();
       setRemaining(left);
-      if (left <= 0) lock("expired");
+      if (left <= 0) signOut("expired");
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [lock]);
+  }, [signOut]);
 
   useEffect(() => {
     const beat = () => {
@@ -69,7 +69,7 @@ export default function SessionTimer() {
   return (
     <div className="flex items-center gap-2">
       <span
-        title="Time until this session locks. Any interaction extends it."
+        title="You are signed out automatically after this long without activity. Anything you do resets it."
         className={`hidden items-center gap-1.5 rounded-lg border px-2 py-1 text-xs tabular sm:inline-flex ${
           warning ? "pulse-soft border-warn/40 bg-warn/10 text-warn" : "border-line text-ink2"
         }`}
@@ -81,10 +81,20 @@ export default function SessionTimer() {
         {minutes}:{String(seconds).padStart(2, "0")}
       </span>
       <button
-        onClick={() => lock("manual")}
-        className="rounded-lg border border-line px-2.5 py-1 text-xs text-ink2 hover:border-muted hover:text-ink"
+        onClick={() => signOut("manual")}
+        title="Sign out"
+        className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1 text-xs text-ink2 transition-colors hover:border-muted hover:text-ink"
       >
-        Lock
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden>
+          <path
+            d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          />
+          <path d="M10 8l-4 4 4 4M6 12h9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="hidden xs:inline sm:inline">Sign out</span>
       </button>
     </div>
   );

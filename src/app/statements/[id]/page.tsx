@@ -1,8 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { play } from "@/lib/sound";
 import PaidToggle from "@/components/PaidToggle";
-import AiReview from "@/components/AiReview";
 import { useCallback, useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import BankBadge from "@/components/BankBadge";
@@ -26,7 +26,6 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
   const router = useRouter();
   const [data, setData] = useState<Detail | null>(null);
   const [missing, setMissing] = useState(false);
-  const [flashed, setFlashed] = useState<Set<string>>(new Set());
   const toast = useToast();
 
   const load = useCallback(() => {
@@ -119,22 +118,11 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
       <div className="card rise p-5" style={{ "--d": "300ms" } as React.CSSProperties}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium text-ink2">Transactions ({data.transactions.length})</h2>
-          {data.ai && (
-            <AiReview
-              statementId={id}
-              rows={data.transactions.length}
-              ai={data.ai}
-              card={{ bankId: data.statement.bank_id, label: data.statement.card_label, last4: data.statement.last4 }}
-              merchants={data.transactions.map((t) => t.description)}
-              onChanged={(ids) => {
-                setFlashed(new Set(ids));
-                load();
-                setTimeout(() => setFlashed(new Set()), 2600);
-              }}
-            />
-          )}
+          <Link href="/transactions" className="text-xs text-accent hover:underline">
+            Recategorise with AI
+          </Link>
         </div>
-        <SavedTxnTable txns={data.transactions} onChanged={load} flashed={flashed} />
+        <SavedTxnTable txns={data.transactions} onChanged={load} />
       </div>
     </div>
   );

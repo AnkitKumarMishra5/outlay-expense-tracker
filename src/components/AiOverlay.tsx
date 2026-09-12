@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import CreditCard from "./CreditCard";
 
 const STAGES = ["Reading every merchant name", "Working out what each one is", "Writing the corrections back"];
+/** The sweep proposes rather than writes, so its last step is different. */
+export const REVIEW_STAGES = ["Reading every merchant name", "Working out what each one is", "Gathering what it would change"];
 
 export function BotMark() {
   return (
@@ -37,20 +39,22 @@ export default function AiOverlay({
   footnote,
   card,
   merchants = [],
+  stages = STAGES,
 }: {
   kicker: string;
   title: string;
   footnote: string;
   card?: OverlayCard | null;
   merchants?: string[];
+  stages?: string[];
 }) {
   const [stage, setStage] = useState(0);
   const [cursor, setCursor] = useState(0);
 
   useEffect(() => {
-    const id = setInterval(() => setStage((s) => Math.min(s + 1, STAGES.length - 1)), 1800);
+    const id = setInterval(() => setStage((s) => Math.min(s + 1, stages.length - 1)), 1800);
     return () => clearInterval(id);
-  }, []);
+  }, [stages.length]);
 
   useEffect(() => {
     if (merchants.length < 2) return;
@@ -101,7 +105,7 @@ export default function AiOverlay({
           </div>
         )}
         <ul className="ai-stages">
-          {STAGES.map((s, i) => (
+          {stages.map((s, i) => (
             <li key={s} className={i < stage ? "done" : i === stage ? "active" : ""}>
               <span className="ai-stage-dot" aria-hidden />
               {s}

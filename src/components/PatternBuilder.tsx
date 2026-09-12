@@ -72,7 +72,7 @@ export default function PatternBuilder({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-xs text-ink">{p.describe}</span>
                 <span className="block text-[10px] text-muted">
-                  for the example above: <span className="font-mono text-ink2">{p.preview || "—"}</span>
+                  for the example above: <span className="font-mono text-ink2">{p.preview || "\u2013"}</span>
                 </span>
                 {p.template.includes("{LAST4}") && missingLast4 > 0 && (
                   <span className="mt-0.5 block text-[10px] text-warn">
@@ -111,7 +111,7 @@ export default function PatternBuilder({
               {PATTERN_TOKENS.map((t) => (
                 <li key={t.id} className="flex items-baseline justify-between gap-2 text-[11px]">
                   <span className="truncate text-muted">{t.label}</span>
-                  <span className="font-mono text-ink2">{sampleFor(t.id) || "—"}</span>
+                  <span className="font-mono text-ink2">{sampleFor(t.id) || "\u2013"}</span>
                 </li>
               ))}
             </ul>
@@ -134,7 +134,7 @@ export default function PatternBuilder({
                 <li key={b.id} className="flex items-baseline gap-2 text-[11px]">
                   <span className="w-4 shrink-0 text-right tabular text-muted">{i + 1}.</span>
                   <span className="min-w-0 flex-1 text-ink2">{b.describe}</span>
-                  <span className="shrink-0 font-mono text-ink">{sample(b.template) || "—"}</span>
+                  <span className="shrink-0 font-mono text-ink">{sample(b.template) || "\u2013"}</span>
                 </li>
               ))}
             </ol>

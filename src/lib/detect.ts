@@ -38,13 +38,66 @@ const STATEMENT_MARKERS = [
   /transaction/i,
 ];
 
-const PRODUCT_NOISE = /\b(?:bank|card|credit|statement|limited|ltd|account|welcome|dear|page)\b/i;
+/**
+ * Product names actually printed on Indian credit cards. Matching against a
+ * list beats inferring from prose: the old approach scanned six thousand
+ * characters for "<something> Credit Card Statement" and happily returned
+ * "Days of monthly" out of a terms-and-conditions paragraph.
+ */
+const PRODUCTS = [
+  "Amazon Pay", "Swiggy", "Tata Neu Infinity", "Tata Neu", "Flipkart Axis", "Myntra Kotak",
+  "Infinia", "Diners Club Black", "Diners Club Privilege", "Regalia Gold", "Regalia",
+  "Millennia", "MoneyBack", "Freedom", "Pixel Play", "Pixel Go", "Pixel", "Biz Black", "Biz Power",
+  "Atlas", "Magnus Burgundy", "Magnus", "Reserve", "Select", "Neo", "Ace", "Vistara",
+  "Coral", "Rubyx", "Sapphiro", "Emeralde", "Expressions", "MakeMyTrip ICICI",
+  "Zenith", "LIT", "Ultimate", "Wealth", "Club Vistara", "First Wealth", "First Select",
+  "SimplyCLICK", "SimplySAVE", "PRIME", "Cashback", "BPCL Octane", "IRCTC",
+  "Marquee", "League", "Pioneer", "Scapia", "Eterna", "Legend", "Indulge", "Pinnacle",
+  "Platinum Travel", "Gold Charge", "Membership Rewards", "SmartEarn", "Rewards Plus",
+  "EazyDiner", "Times Black", "Aurum", "Elite", "Prosperity", "Moneyback+",
+];
+
+const PRODUCT_NOISE =
+  /\b(?:bank|card|credit|statement|limited|ltd|account|welcome|dear|page|days|monthly|generation|your|the|of|for|and|will|please|refer|details|terms)\b/i;
 
 function detectProduct(head: string, bankId: string | null): string | null {
+  // Only the masthead: anything further down is body copy, not the card name.
+  const top = head.slice(0, 1600);
+  const flat = top.replace(/\s+/g, " ");
+
+  // Several real product names are also ordinary words: ICICI's marketing line
+  // "Ace your Digital Banking" was being read as an Axis Ace card. These only
+  // count when "card" is close by.
+  const NEEDS_CONTEXT = new Set([
+    "Ace", "Neo", "Select", "Reserve", "Freedom", "PRIME", "Elite", "LIT",
+    "Legend", "Indulge", "Pinnacle", "Wealth", "Ultimate", "Prosperity",
+  ]);
+  for (const product of [...PRODUCTS].sort((a, b) => b.length - a.length)) {
+    const escaped = product.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const hit = new RegExp(`\\b${escaped}\\b`, "i").exec(flat);
+    if (!hit) continue;
+    if (NEEDS_CONTEXT.has(product)) {
+      const around = flat.slice(Math.max(0, hit.index - 40), hit.index + product.length + 40);
+      if (!/card/i.test(around)) continue;
+    }
+    return product;
+  }
+
+  // Nothing in the masthead. Many issuers name the card once in the body, in a
+  // phrase that cannot be anything else: "Amazon Pay ICICI Bank Credit Card".
+  // Matching that is safe where a bare product word would not be, because the
+  // first "Amazon Pay" in this statement is a merchant on a transaction row.
+  const whole = head.replace(/\s+/g, " ");
+  for (const product of [...PRODUCTS].sort((a, b) => b.length - a.length)) {
+    const escaped = product.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`\\b${escaped}\\b[^\\n]{0,30}credit card`, "i").test(whole)) return product;
+    if (new RegExp(`credit card[^\\n]{0,30}\\b${escaped}\\b`, "i").test(whole)) return product;
+  }
+
   const bankWords = bankId ? (BANKS.find((b) => b.id === bankId)?.name ?? "").split(/\s+/) : [];
   const candidates = [
-    ...head.matchAll(/(?:^|\n)\s*([A-Za-z][A-Za-z0-9&'+.\- ]{1,34}?)\s+Credit Card Statement\b/gi),
-    ...head.matchAll(/(?:^|\n)\s*([A-Za-z][A-Za-z0-9&'+.\- ]{1,34}?)\s+Card Statement\b/gi),
+    ...top.matchAll(/(?:^|\n)\s*([A-Za-z][A-Za-z0-9&'+.\- ]{1,34}?)\s+Credit Card Statement\b/gi),
+    ...top.matchAll(/(?:^|\n)\s*([A-Za-z][A-Za-z0-9&'+.\- ]{1,34}?)\s+Card Statement\b/gi),
   ];
   for (const m of candidates) {
     const raw = m[1].trim().replace(/\s{2,}/g, " ");

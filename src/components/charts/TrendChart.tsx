@@ -1,10 +1,17 @@
 "use client";
 
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { inr, monthLabel } from "@/lib/format";
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { axisTick, inr, monthLabel } from "@/lib/format";
 import { useChartTokens } from "@/lib/chartTokens";
 
-export default function TrendChart({ data }: { data: { month: string; debits: number }[] }) {
+export default function TrendChart({
+  data,
+  highlight,
+}: {
+  data: { month: string; debits: number }[];
+  /** The month the rest of the page is showing, picked out of the run. */
+  highlight?: string;
+}) {
   const t = useChartTokens();
   const rows = data.map((d) => ({ ...d, label: monthLabel(d.month) }));
   return (
@@ -18,7 +25,7 @@ export default function TrendChart({ data }: { data: { month: string; debits: nu
             axisLine={false}
             width={52}
             tick={{ fill: t.muted, fontSize: 12 }}
-            tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))}
+            tickFormatter={axisTick}
           />
           <Tooltip
             cursor={{ fill: t.grid, fillOpacity: 0.45 }}
@@ -26,7 +33,16 @@ export default function TrendChart({ data }: { data: { month: string; debits: nu
             formatter={(v) => [inr(Number(v)), "Spend"]}
             labelStyle={{ color: t.muted }}
           />
-          <Bar dataKey="debits" fill={t.series[0]} radius={[4, 4, 0, 0]} maxBarSize={44} isAnimationActive={false} />
+          <Bar dataKey="debits" radius={[4, 4, 0, 0]} maxBarSize={44} isAnimationActive={false}>
+            {rows.map((r) => (
+              <Cell
+                key={r.month}
+                fill={t.series[0]}
+                // The month on screen stands out; the rest are the run it sits in.
+                fillOpacity={highlight && r.month !== highlight ? 0.32 : 1}
+              />
+            ))}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>

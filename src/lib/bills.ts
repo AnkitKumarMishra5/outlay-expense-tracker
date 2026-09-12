@@ -1,0 +1,89 @@
+import { Analytics } from "./types";
+
+export type Bill = Analytics["dues"][number];
+
+export function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function monthIndex(day: string) {
+  const [y, m] = day.split("-").map(Number);
+  return y * 12 + (m - 1);
+}
+
+// A cycle closes on the statement date and falls due 15 to 25 days later, so it
+// straddles two calendar months. Older than last month means a statement is
+// missing, not settled.
+function statementMonth(b: Bill) {
+  if (b.statement_date) return monthIndex(b.statement_date);
+  const due = Date.parse(`${b.day}T00:00:00`) - 18 * 86_400_000;
+  return monthIndex(new Date(due).toISOString().slice(0, 10));
+}
+
+/** The month a statement belongs to: the month it was generated in. */
+export function billMonth(b: Bill): string {
+  if (b.statement_date) return b.statement_date.slice(0, 7);
+  const due = Date.parse(`${b.day}T00:00:00`) - 18 * 86_400_000;
+  return new Date(due).toISOString().slice(0, 7);
+}
+
+export interface BillCycle {
+  /** This cycle's bills plus anything still unpaid from before it. */
+  current: Bill[];
+  open: Bill[];
+  settled: Bill[];
+  overdue: Bill[];
+  /** Still to pay, what was already paid this cycle, and the two together. */
+  owed: number;
+  cleared: number;
+  billed: number;
+  overdueOwed: number;
+  /** Share of the cycle's money already paid, 0 to 1. */
+  progress: number;
+}
+
+/** One reading of the cycle, shared by the panel and the figures above it. */
+export function billCycle(bills: Bill[], now = today(), month?: string): BillCycle {
+  const sorted = [...bills].sort((a, b) => a.day.localeCompare(b.day));
+
+  let current: Bill[];
+  if (month) {
+    // A chosen month is exactly its own statements, with nothing carried in.
+    const want = monthIndex(`${month}-01`);
+    current = sorted.filter((b) => statementMonth(b) === want);
+  } else {
+    const thisMonth = monthIndex(now);
+    const live = new Map<string, Bill>();
+    for (const b of sorted) {
+      if (thisMonth - statementMonth(b) <= 1) live.set(b.card_id, b);
+    }
+    const cycle = [...live.values()];
+    const cycleIds = new Set(cycle.map((b) => b.id));
+    current = [...cycle, ...sorted.filter((b) => !b.settled && !cycleIds.has(b.id))];
+  }
+
+  const open = current.filter((b) => !b.settled);
+  const settled = current.filter((b) => b.settled);
+  const overdue = open.filter((b) => b.day < now);
+  const amount = (list: Bill[]) => list.reduce((a, b) => a + Math.max(0, Number(b.amount ?? 0)), 0);
+
+  const owed = open.reduce((a, b) => a + Number(b.amount ?? 0), 0);
+  const cleared = amount(settled);
+  // Every bill in the cycle at face value, which is what the statements add up
+  // to. Deriving it from cleared plus what is left clips differently and left
+  // the figures strip a rupee or two apart from itself.
+  const billed = amount(current);
+
+  return {
+    current,
+    open,
+    settled,
+    overdue,
+    owed,
+    cleared,
+    billed,
+    overdueOwed: overdue.reduce((a, b) => a + Number(b.amount ?? 0), 0),
+    progress: billed > 0 ? cleared / billed : 0,
+  };
+}

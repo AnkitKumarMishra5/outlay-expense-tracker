@@ -1,28 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { Range, rangeStart } from "@/lib/format";
+import { Range, monthWindow, rangeStart, shiftMonth } from "@/lib/format";
 import { currentUserId, unauthorized } from "@/lib/auth";
 import { decryptOrNull } from "@/lib/crypto";
-import { detectSubscriptions } from "@/lib/subscriptions";
 
 export async function GET(req: NextRequest) {
   const userId = await currentUserId(req);
   if (!userId) return unauthorized();
   const params = req.nextUrl.searchParams;
-  const range = (params.get("range") ?? "3m") as Range;
   const cardId = params.get("cardId");
+  const month = params.get("month");
+  const range = (params.get("range") ?? "3m") as Range;
+  const window = month && /^\d{4}-\d{2}$/.test(month) ? monthWindow(month) : null;
+  const start = window ? window.start : rangeStart(range);
 
-  const start = rangeStart(range);
+  // A transaction belongs to the month its statement was generated in: a
+  // statement dated 12 August bills a cycle that opened on 13 July.
+  const IN_MONTH = (pos: number) =>
+    `statement_id IN (SELECT id FROM statements WHERE user_id = $1
+       AND substr(COALESCE(statement_date, period_end, due_date), 1, 7) = $${pos})`;
 
   const args: string[] = [userId];
   const where = ["user_id = $1"];
-  if (start) { args.push(start); where.push(`txn_date >= $${args.length}`); }
+  if (month && window) {
+    args.push(month);
+    where.push(IN_MONTH(args.length));
+  } else if (start) {
+    args.push(start);
+    where.push(`txn_date >= $${args.length}`);
+  }
   if (cardId) { args.push(cardId); where.push(`card_id = $${args.length}`); }
   const W = `WHERE ${where.join(" AND ")}`;
 
   const cardArgs: string[] = [userId];
   let joinWindow = "";
-  if (start) { cardArgs.push(start); joinWindow = ` AND t.txn_date >= $${cardArgs.length}`; }
+  if (month && window) {
+    cardArgs.push(month);
+    joinWindow = ` AND t.${IN_MONTH(cardArgs.length)}`;
+  } else if (start) {
+    cardArgs.push(start);
+    joinWindow = ` AND t.txn_date >= $${cardArgs.length}`;
+  }
   cardArgs.push(userId);
   const ownerPos = cardArgs.length;
   let cardFilter = "";
@@ -30,7 +48,13 @@ export async function GET(req: NextRequest) {
 
   const joinArgs: string[] = [userId];
   const joinWhere = ["t.user_id = $1"];
-  if (start) { joinArgs.push(start); joinWhere.push(`t.txn_date >= $${joinArgs.length}`); }
+  if (month && window) {
+    joinArgs.push(month);
+    joinWhere.push(`t.${IN_MONTH(joinArgs.length)}`);
+  } else if (start) {
+    joinArgs.push(start);
+    joinWhere.push(`t.txn_date >= $${joinArgs.length}`);
+  }
   if (cardId) { joinArgs.push(cardId); joinWhere.push(`t.card_id = $${joinArgs.length}`); }
   const JW = `WHERE ${joinWhere.join(" AND ")}`;
 
@@ -38,29 +62,19 @@ export async function GET(req: NextRequest) {
   let dueFilter = "";
   if (cardId) { dueArgs.push(cardId); dueFilter = ` AND s.card_id = $${dueArgs.length}`; }
 
-  const c = await db();
-  const [recurringRows] = await Promise.all([
-    c.execute(
-      `SELECT t.txn_date, t.description, t.amount, cards.id AS card_id, cards.card_label, cards.bank_id, cards.last4_enc
-       FROM transactions t JOIN cards ON cards.id = t.card_id
-       WHERE t.user_id = $1 AND t.type = 'debit' AND t.category <> 'Payments & Refunds'
-       ORDER BY t.txn_date`,
-      [userId]
-    ),
-  ]);
-  const subscriptions = detectSubscriptions(
-    recurringRows.rows.map((r) => ({
-      cardId: r.card_id as string,
-      cardLabel: r.card_label as string,
-      bankId: r.bank_id as string,
-      last4: decryptOrNull(r.last4_enc as string | null, userId),
-      date: r.txn_date as string,
-      description: r.description as string,
-      amount: Number(r.amount),
-    }))
-  );
 
-  const [totals, byMonth, byCategory, byMerchant, byCard, recent, byDay, dayCards, dues] = await Promise.all([
+  const prev = month && window ? monthWindow(shiftMonth(month, -1)) : null;
+  const prevArgs: string[] = [userId];
+  const prevWhere = ["user_id = $1"];
+  if (prev && month) {
+    prevArgs.push(shiftMonth(month, -1));
+    prevWhere.push(IN_MONTH(prevArgs.length));
+  }
+  if (cardId) { prevArgs.push(cardId); prevWhere.push(`card_id = $${prevArgs.length}`); }
+  const PW = `WHERE ${prevWhere.join(" AND ")}`;
+
+  const c = await db();
+  const [totals, byCategory, byCard, biggest, dues, months, byCategoryPrev, feeRows] = await Promise.all([
     c.execute(
       `SELECT
          COALESCE(SUM(CASE WHEN type='debit' THEN amount END), 0) AS debits,
@@ -71,30 +85,9 @@ export async function GET(req: NextRequest) {
       args
     ),
     c.execute(
-      `SELECT substr(txn_date,1,7) AS month,
-         COALESCE(SUM(CASE WHEN type='debit' THEN amount END), 0) AS debits
-       FROM transactions ${W} GROUP BY month ORDER BY month`,
-      args
-    ),
-    c.execute(
       `SELECT category, SUM(amount) AS total, COUNT(*)::int AS n
        FROM transactions ${W} AND type='debit' AND category != 'Payments & Refunds'
        GROUP BY category ORDER BY total DESC`,
-      args
-    ),
-    c.execute(
-      // Merchants, not categories. "Shopping" does not tell you it was Amazon.
-      // Descriptions carry reference numbers and city names, so they are
-      // trimmed to their leading words before grouping.
-      `SELECT merchant, SUM(amount) AS total, COUNT(*)::int AS n,
-              (ARRAY_AGG(category ORDER BY amount DESC))[1] AS category
-         FROM (
-           SELECT amount, category,
-                  UPPER(ARRAY_TO_STRING((STRING_TO_ARRAY(REGEXP_REPLACE(description, '[^A-Za-z ]+', ' ', 'g'), ' '))[1:2], ' ')) AS merchant
-             FROM transactions ${W} AND type='debit' AND category != 'Payments & Refunds'
-         ) m
-        WHERE LENGTH(TRIM(merchant)) > 2
-        GROUP BY merchant ORDER BY total DESC LIMIT 8`,
       args
     ),
     c.execute(
@@ -119,35 +112,45 @@ export async function GET(req: NextRequest) {
       cardArgs
     ),
     c.execute(
-      `SELECT id, txn_date, description, amount, type, category, is_fee
-       FROM transactions ${W} ORDER BY txn_date DESC, created_at DESC LIMIT 8`,
-      args
-    ),
-    c.execute(
-      `SELECT txn_date AS day,
-         COALESCE(SUM(CASE WHEN type='debit' THEN amount END), 0) AS debits,
-         COUNT(*)::int AS txns
-       FROM transactions ${W} AND type='debit'
-       GROUP BY txn_date ORDER BY day`,
-      args
-    ),
-    c.execute(
-      `SELECT t.txn_date AS day, cards.id AS card_id, cards.card_label, cards.bank_id, cards.last4_enc,
-         SUM(t.amount) AS debits, COUNT(*)::int AS txns
-       FROM transactions t JOIN cards ON cards.id = t.card_id
-       ${JW} AND t.type='debit'
-       GROUP BY t.txn_date, cards.id
-       ORDER BY t.txn_date, debits DESC`,
+      `SELECT t.id, t.txn_date, t.description, t.amount, t.category, t.is_fee, t.is_international,
+              cards.card_label, cards.bank_id, cards.last4_enc
+         FROM transactions t JOIN cards ON cards.id = t.card_id
+         ${JW} AND t.type='debit'
+        ORDER BY t.amount DESC, t.txn_date DESC LIMIT 10`,
       joinArgs
     ),
     c.execute(
       `SELECT s.id, s.card_id, s.due_date AS day, s.statement_date, s.total_due AS amount, s.min_due AS min_due, s.paid_at,
+         s.total_debits, s.txn_count,
          (s.paid_at IS NOT NULL OR COALESCE(s.total_due, 0) <= 0) AS settled,
          cards.card_label, cards.bank_id, cards.last4_enc
        FROM statements s JOIN cards ON cards.id = s.card_id
        WHERE s.user_id = $1 AND s.due_date IS NOT NULL${dueFilter}
        ORDER BY s.due_date`,
       dueArgs
+    ),
+    c.execute(
+      `SELECT DISTINCT substr(txn_date,1,7) AS month FROM transactions WHERE user_id = $1
+       UNION
+       SELECT DISTINCT substr(COALESCE(statement_date, period_end, due_date),1,7) AS month
+         FROM statements WHERE user_id = $1 AND COALESCE(statement_date, period_end, due_date) IS NOT NULL
+       ORDER BY month DESC`,
+      [userId]
+    ),
+    prev
+      ? c.execute(
+          `SELECT category, SUM(amount) AS total
+           FROM transactions ${PW} AND type='debit' AND category != 'Payments & Refunds'
+           GROUP BY category`,
+          prevArgs
+        )
+      : Promise.resolve({ rows: [] as { [k: string]: unknown }[] }),
+    c.execute(
+      `SELECT t.txn_date, t.description, t.amount, cards.card_label
+         FROM transactions t JOIN cards ON cards.id = t.card_id
+         ${JW} AND t.is_fee = 1
+        ORDER BY t.amount DESC LIMIT 20`,
+      joinArgs
     ),
   ]);
 
@@ -156,14 +159,12 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     totals: totals.rows[0],
-    byMonth: byMonth.rows,
     byCategory: byCategory.rows,
-    byMerchant: byMerchant.rows,
     byCard: reveal(byCard.rows),
-    subscriptions,
-    recent: recent.rows,
-    byDay: byDay.rows,
-    dayCards: reveal(dayCards.rows),
+    biggest: reveal(biggest.rows),
     dues: reveal(dues.rows),
+    months: months.rows.map((r) => r.month as string),
+    byCategoryPrev: byCategoryPrev.rows,
+    fees: feeRows.rows,
   });
 }

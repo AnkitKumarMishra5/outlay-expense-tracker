@@ -11,6 +11,7 @@ export const CATEGORIES = [
   "EMI & Loans",
   "Insurance",
   "Fees & Charges",
+  "Taxes",
   "Payments & Refunds",
   "Other",
 ] as const;
@@ -46,6 +47,18 @@ const RULES: [RegExp, Category][] = [
       "dispute credit", "credit adjustment", "goodwill", "excess payment"
     ),
     "Payments & Refunds",
+  ],
+  [
+    // Tax paid with the card, which is not the same as the GST levied on a
+    // card fee, which stays under Fees & Charges further down.
+    any(
+      w("cbdt"), w("cbic"), w("gstn"), w("nsdl"), "tin 2", "protean",
+      "income tax", "advance tax", "self ?assessment", "self assesment", w("itns"),
+      "tax payment", "pay ?tax", "direct tax", "indirect tax", "gst payment",
+      "tds payment", "property tax", "municipal tax", "professional tax",
+      "water tax", "house tax", "road tax", "customs duty", "excise duty", w("challan")
+    ),
+    "Taxes",
   ],
   [
     any(
@@ -196,7 +209,22 @@ const RULES: [RegExp, Category][] = [
  * parse time, with or without an API key. The optional AI review only ever
  * revises what this produced.
  */
-export function categorize(description: string): Category {
+/** A keyword the reader mapped to a category themselves. */
+export interface CategoryRule {
+  keyword: string;
+  category: string;
+}
+
+export function categorize(description: string, rules: CategoryRule[] = []): Category {
+  // The reader's own rules come first. They were written to override what the
+  // built-in list would otherwise have decided.
+  const text = description.toLowerCase();
+  for (const r of rules) {
+    const key = r.keyword.trim().toLowerCase();
+    if (key && text.includes(key) && (CATEGORIES as readonly string[]).includes(r.category)) {
+      return r.category as Category;
+    }
+  }
   for (const [re, cat] of RULES) if (re.test(description)) return cat;
   return "Other";
 }

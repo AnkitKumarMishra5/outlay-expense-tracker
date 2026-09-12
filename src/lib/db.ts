@@ -81,6 +81,15 @@ const SCHEMA = [
     updated_at TEXT NOT NULL,
     PRIMARY KEY (user_id, card_id, month)
   )`,
+  `CREATE TABLE IF NOT EXISTS category_rules (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    keyword TEXT NOT NULL,
+    category TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_category_rule_unique
+     ON category_rules(user_id, lower(keyword))`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_stmt_period_unique
      ON statements(user_id, card_id, period_start, period_end)
      WHERE period_end IS NOT NULL`,

@@ -70,13 +70,30 @@ export interface StatementRow {
 
 export interface Analytics {
   totals: { debits: number; credits: number; fees: number; txns: number };
-  byMonth: { month: string; debits: number }[];
   byCategory: { category: string; total: number }[];
-  byMerchant: { merchant: string; total: number; n: number; category: string }[];
+  /** The same categories a month earlier, for the movement panel. */
+  byCategoryPrev?: { category: string; total: number }[];
   byCard: { card_id: string; card_label: string; bank_id: string; last4: string | null; debits: number; txns: number; next_due: string | null; next_due_amount: number | null }[];
-  recent: { id: string; txn_date: string; description: string; amount: number; type: string; category: string; is_fee: number }[];
+  /** This period's charges, largest first. */
+  biggest: { id: string; txn_date: string; description: string; amount: number; category: string; is_fee: number; is_international: number; card_label: string; bank_id: string; last4: string | null }[];
+  /** Every fee and charge in the period, so the tile can list them. */
+  fees?: { txn_date: string; description: string; amount: number; card_label: string }[];
+  /** Every month the account holds data for, newest first. */
+  months?: string[];
+  dues: { id: string; card_id: string; day: string; statement_date: string | null; amount: number | null; min_due: number | null; total_debits: number | null; txn_count: number | null; settled: boolean; paid_at: string | null; card_label: string; bank_id: string; last4: string | null }[];
+}
+
+/** The cross-month half of the dashboard, fetched separately so the rest of
+ *  the page does not wait on it. */
+export interface Timeline {
+  byMonth: { month: string; debits: number }[];
+  /** The same spend grouped by the statement that billed it. */
+  byStatementMonth: { month: string; debits: number }[];
+  /** Spend split by category, month by month, on each of those two bases. */
+  byCategoryMonth: { month: string; category: string; debits: number }[];
+  byCategoryStatementMonth: { month: string; category: string; debits: number }[];
   byDay: { day: string; debits: number; txns: number }[];
   dayCards: { day: string; card_id: string; card_label: string; bank_id: string; last4: string | null; debits: number; txns: number }[];
   subscriptions: import("./subscriptions").Subscription[];
-  dues: { id: string; card_id: string; day: string; statement_date: string | null; amount: number | null; min_due: number | null; settled: boolean; paid_at: string | null; card_label: string; bank_id: string; last4: string | null }[];
 }
+

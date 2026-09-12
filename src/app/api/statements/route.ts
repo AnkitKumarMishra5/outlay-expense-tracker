@@ -43,19 +43,37 @@ export async function POST(req: NextRequest) {
   if (cardRs.rows.length === 0) return NextResponse.json({ error: "Unknown card." }, { status: 404 });
 
   const s = body.summary ?? {};
-  if (s.periodEnd) {
-    const clash = await c.execute(
-      `SELECT id FROM statements
-       WHERE user_id = $1 AND card_id = $2 AND period_end = $3
-         AND period_start IS NOT DISTINCT FROM $4`,
-      [userId, body.cardId, s.periodEnd, s.periodStart ?? null]
+  // Not every issuer prints a billing period, so fall through to the dates.
+  const clash = s.periodEnd
+    ? await c.execute(
+        `SELECT id FROM statements
+         WHERE user_id = $1 AND card_id = $2 AND period_end = $3
+           AND period_start IS NOT DISTINCT FROM $4`,
+        [userId, body.cardId, s.periodEnd, s.periodStart ?? null]
+      )
+    : s.statementDate
+      ? await c.execute(
+          "SELECT id FROM statements WHERE user_id = $1 AND card_id = $2 AND statement_date = $3",
+          [userId, body.cardId, s.statementDate]
+        )
+      : s.dueDate
+        ? await c.execute(
+            `SELECT id FROM statements
+             WHERE user_id = $1 AND card_id = $2 AND due_date = $3
+               AND total_due IS NOT DISTINCT FROM $4`,
+            [userId, body.cardId, s.dueDate, s.totalDue ?? null]
+          )
+        : null;
+  if (clash?.rows.length) {
+    const which = s.periodEnd
+      ? `ending ${s.periodEnd}`
+      : s.statementDate
+        ? `dated ${s.statementDate}`
+        : `due ${s.dueDate}`;
+    return NextResponse.json(
+      { error: `A statement ${which} is already saved for this card. Delete that one first to replace it.` },
+      { status: 409 }
     );
-    if (clash.rows.length) {
-      return NextResponse.json(
-        { error: `A statement ending ${s.periodEnd} is already saved for this card. Delete it first to replace it.` },
-        { status: 409 }
-      );
-    }
   }
 
   const txns = body.transactions.filter(

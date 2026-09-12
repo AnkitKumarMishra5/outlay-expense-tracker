@@ -171,13 +171,52 @@ button:active:not(:disabled) {
 @keyframes shimmer { to { background-position: -200% 0; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/**
+ * A placeholder, not a component.
+ *
+ * The old one drew a border around every block, so a loading page looked like
+ * a wireframe of empty boxes rather than content about to arrive. These are
+ * soft shapes with a highlight travelling over them, easing in and pausing
+ * between passes the way a real sweep does instead of scrolling at a constant
+ * rate. They stagger, so the page fills rather than flickering all at once.
+ */
 .shimmer {
-  background: linear-gradient(100deg, var(--color-surface) 40%, var(--color-surface2) 50%, var(--color-surface) 60%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
-  border-radius: 14px;
-  border: 1px solid var(--color-line);
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--color-ink) 7%, transparent);
+  animation: shimmer-breathe 2.6s ease-in-out infinite;
+  animation-delay: calc(var(--sk, 0) * 90ms);
 }
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in oklab, var(--color-ink) 9%, transparent) 48%,
+    transparent 76%
+  );
+  transform: translateX(-100%);
+  animation: shimmer-sweep 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation-delay: calc(var(--sk, 0) * 90ms);
+}
+@keyframes shimmer-sweep {
+  0% { transform: translateX(-100%); }
+  60%, 100% { transform: translateX(100%); }
+}
+@keyframes shimmer-breathe {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
+}
+
+/* A skeleton panel is a soft ground, not an outlined box. */
+.sk-panel {
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--color-surface) 72%, transparent);
+}
+.stat-strip.is-bare .stat-cell { border: none; }
 
 .spinner {
   display: inline-block;
@@ -253,8 +292,6 @@ button:active:not(:disabled) {
   background-size: 260% 100%;
   background-position: 200% 0;
 }
-
-
 
 .emboss {
   text-shadow: -0.5px -0.5px 0 rgba(0, 0, 0, 0.55), 0.5px 0.5px 0 rgba(255, 255, 255, 0.3),
@@ -400,6 +437,7 @@ button:active:not(:disabled) {
   }
 }
 .cal-cell { transition: transform 0.18s ease; }
+.cal-cell:has(.cal-tags) { padding-bottom: 12px; }
 
 .spine {
   position: relative;
@@ -433,8 +471,6 @@ button:active:not(:disabled) {
   border-radius: 2px;
   background: linear-gradient(180deg, var(--edge), var(--edge2));
 }
-
-
 
 .spine-on {
   border-color: var(--color-accent);
@@ -553,17 +589,11 @@ button:active:not(:disabled) {
   .stat-tile:hover { transform: translateY(-3px); box-shadow: 0 10px 26px rgba(8, 13, 21, 0.16); }
 }
 
-
-
-
-
-
-
 @media (prefers-reduced-motion: no-preference) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shimmer { animation: none; }
+  .shimmer, .shimmer::after { animation: none; }
 }
 
 .cal-tip {
@@ -730,14 +760,6 @@ button:active:not(:disabled) {
   font-variant-numeric: tabular-nums;
   color: rgba(255, 255, 255, 0.92);
 }
-
-
-
-
-
-
-
-
 
 @media (prefers-reduced-motion: no-preference) {
 }
@@ -950,12 +972,6 @@ button:active:not(:disabled) {
 }
 
 .card-ghost-lg { width: 188px; border-radius: 3.715% / 5.891%; }
-
-
-
-
-
-
 
 @media (prefers-reduced-motion: no-preference) {
   .cc:hover .cc-chip::after { transition: background-position 0.75s ease; background-position: -80% 0; }
@@ -2053,3 +2069,709 @@ button:active:not(:disabled) {
   border-radius: 999px;
   transform-origin: left center;
 }
+
+/* ---------------------------------------------------------------------------
+   Dashboard
+   --------------------------------------------------------------------------- */
+
+/* The month control, which is what the whole page is counted in. */
+.month-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 2px;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  background: var(--color-surface);
+  padding: 2px;
+  max-width: 100%;
+}
+.month-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  border-radius: 8px;
+  color: var(--color-ink2);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.month-step:hover:not(:disabled) { background: var(--color-surface2); color: var(--color-ink); }
+.month-step:disabled { opacity: 0.32; cursor: default; }
+.month-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-ink);
+  transition: background-color 140ms ease;
+}
+.month-face:hover { background: var(--color-surface2); }
+.month-face svg { transition: transform 180ms ease; flex: none; }
+.month-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 190px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  background: var(--color-surface);
+  padding: 4px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  animation: month-menu-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes month-menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.985); }
+}
+.month-option {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--color-ink2);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.month-option:hover { background: var(--color-surface2); color: var(--color-ink); }
+.month-option.is-on { background: var(--color-accentSoft); color: var(--color-accent); font-weight: 500; }
+.month-menu-rule { height: 1px; margin: 4px 6px; background: var(--color-line); }
+
+/* The period's figures on one rule, read as the sum they are. */
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0;
+  overflow: hidden;
+}
+.stat-cell {
+  position: relative;
+  min-width: 0;
+  padding: 14px 16px;
+  border-top: 1px solid var(--color-line);
+  border-left: 1px solid var(--color-line);
+}
+.stat-cell:nth-child(-n + 2) { border-top: none; }
+.stat-cell:nth-child(2n + 1) { border-left: none; }
+.stat-cell.is-lead {
+  background: linear-gradient(135deg, color-mix(in oklab, var(--color-accent) 9%, transparent), transparent 62%);
+}
+.stat-cell.is-lead .stat-cell-label { color: var(--color-ink2); }
+.stat-cell-label {
+  font-size: 11px;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stat-cell-value {
+  margin-top: 2px;
+  font-size: clamp(1.05rem, 2.4vw, 1.3rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Two halves of one sum, tinted from one hue so they read as a pair without
+   either claiming to be good or bad news. The count is a supporting figure and
+   is toned down rather than coloured, so nothing competes with the money. */
+.stat-accent { color: var(--color-accent); }
+.stat-spend { color: color-mix(in oklab, var(--color-accent) 45%, var(--color-ink)); }
+.stat-quiet { color: var(--color-ink2); }
+
+/* The operator sits on the rule between two figures, the way a statement
+   prints it, rather than being left for the reader to infer. */
+.stat-op {
+  position: absolute;
+  top: 50%;
+  right: -11px;
+  z-index: 2;
+  display: none;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface2);
+  color: var(--color-ink2);
+  font-size: 12px;
+  line-height: 1;
+  transform: translateY(-50%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+@media (min-width: 760px) {
+  .stat-strip { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  /* :nth-child(n) so this outranks the two-column rules above it, which were
+     leaving the third and fifth cells without their divider. */
+  .stat-cell:nth-child(n) { border-top: none; border-left: 1px solid var(--color-line); }
+  .stat-cell:first-child { border-left: none; }
+  .stat-op { display: inline-flex; }
+}
+
+/* The line where month-scoped figures end and the long view begins. */
+.section-rule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 26px;
+  padding-top: 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-muted);
+}
+.section-rule > span:first-child { flex: none; color: var(--color-ink2); }
+.section-rule::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--color-line), transparent);
+  order: 1;
+}
+.section-rule-note {
+  order: 2;
+  flex: none;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+}
+@media (max-width: 520px) {
+  .section-rule-note { display: none; }
+}
+
+/* Where this cycle's bills stand. */
+.payoff {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.payoff-gauge {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.payoff-ring { position: relative; width: 72px; height: 72px; line-height: 0; }
+.payoff-ring svg { transform: rotate(-90deg); overflow: visible; }
+.payoff-ring-track {
+  fill: none;
+  stroke: color-mix(in oklab, var(--color-ink) 11%, transparent);
+  stroke-width: 8;
+}
+/* Nothing settled yet is a state, not a failure: the track takes the tone of
+   the work outstanding so an empty ring still reads as deliberate. */
+.payoff.is-late .payoff-ring-track { stroke: color-mix(in oklab, var(--color-bad) 24%, transparent); }
+.payoff-ring-arc {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 8;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 6px color-mix(in oklab, var(--color-accent) 40%, transparent));
+  transition: stroke-dashoffset 1100ms cubic-bezier(0.16, 1, 0.3, 1), stroke 300ms ease;
+}
+.payoff.is-done .payoff-ring-arc {
+  stroke: var(--color-good);
+  filter: drop-shadow(0 0 10px color-mix(in oklab, var(--color-good) 55%, transparent));
+}
+.payoff-ring-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  line-height: 1;
+}
+.payoff-ring-count {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--color-ink);
+}
+.payoff-ring-of { font-size: 13px; font-weight: 500; color: var(--color-muted); }
+.payoff-ring-word {
+  font-size: 9px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-muted);
+}
+.payoff-side { min-width: 0; }
+.payoff-headline {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.payoff-sub { margin-top: 4px; font-size: 11.5px; line-height: 1.3; color: var(--color-muted); }
+
+/* A widget that answers over its own span carries its own span control. */
+.span-picker {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  background: var(--color-surface2);
+}
+.span-picker button {
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--color-muted);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.span-picker button:hover { color: var(--color-ink); }
+.span-picker button.is-on {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
+}
+
+/* Recurring charges, and the charges each one was inferred from. */
+.sub-row {
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  background: var(--color-surface2);
+  overflow: hidden;
+}
+.sub-head {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  text-align: left;
+  transition: background-color 140ms ease;
+}
+.sub-head:hover { background: color-mix(in oklab, var(--color-ink) 4%, transparent); }
+.sub-body {
+  border-top: 1px solid var(--color-line);
+  padding: 10px 12px 12px;
+}
+.sub-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11px;
+  color: var(--color-muted);
+  margin-bottom: 9px;
+}
+.sub-charges { display: grid; gap: 2px; }
+.sub-charges li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 2px;
+  font-size: 11.5px;
+  border-radius: 6px;
+}
+.sub-charges li:hover { background: color-mix(in oklab, var(--color-ink) 4%, transparent); }
+.sub-tick {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--color-accent) 70%, transparent);
+}
+
+/* What moved since last month, and by how much. */
+.mv-summary { font-size: 13px; font-weight: 500; }
+.mv-list { margin-top: 12px; display: grid; gap: 9px; }
+.mv-row {
+  display: grid;
+  grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.mv-name { display: flex; min-width: 0; align-items: center; gap: 7px; font-size: 12px; color: var(--color-ink2); }
+.mv-dot { width: 8px; height: 8px; flex: none; border-radius: 999px; }
+.mv-track { position: relative; height: 10px; min-width: 0; }
+.mv-axis {
+  position: absolute;
+  left: 50%;
+  top: -1px;
+  bottom: -1px;
+  width: 1px;
+  background: var(--color-line);
+}
+.mv-bar {
+  position: absolute;
+  top: 1px;
+  height: 8px;
+  border-radius: 3px;
+}
+.mv-bar.is-up { left: 50%; background: linear-gradient(90deg, color-mix(in oklab, var(--color-warn) 55%, transparent), var(--color-warn)); }
+.mv-bar.is-down { right: 50%; background: linear-gradient(270deg, color-mix(in oklab, var(--color-good) 55%, transparent), var(--color-good)); }
+.mv-delta { font-size: 12px; white-space: nowrap; }
+.mv-pct { margin-left: 5px; font-size: 10px; color: var(--color-muted); }
+.mv-foot { margin-top: 11px; font-size: 11px; color: var(--color-muted); }
+@media (max-width: 520px) {
+  .mv-row { grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr) auto; gap: 7px; }
+  .mv-name { font-size: 11px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .month-menu { animation: none; }
+  .month-face svg { transition: none; }
+  .payoff-ring-arc { transition: none; }
+}
+
+/* The period's charges, largest first. */
+.big-list { display: grid; gap: 10px; }
+.big-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.big-rank { width: 14px; text-align: right; font-size: 11px; color: var(--color-muted); }
+.big-main { min-width: 0; }
+.big-desc {
+  display: block;
+  font-size: 12.5px;
+  color: var(--color-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.big-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 1px;
+  font-size: 10.5px;
+  color: var(--color-ink2);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.big-dot { width: 7px; height: 7px; flex: none; border-radius: 999px; }
+.big-flag {
+  border-radius: 4px;
+  background: var(--color-surface2);
+  padding: 0 4px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-muted);
+}
+.big-flag.is-fee { color: var(--color-warn); }
+.big-bar {
+  display: block;
+  height: 3px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--color-accent) 45%, transparent), var(--color-accent));
+}
+.big-amount { font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+.big-foot { margin-top: 12px; font-size: 11px; color: var(--color-muted); }
+
+/* Which cards a day was spent on, capped so a busy cell stays readable. */
+.cal-tags {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 3px;
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+}
+.cal-tag {
+  min-width: 13px;
+  border-radius: 3px;
+  padding: 0 2px;
+  font-size: 7.5px;
+  font-weight: 700;
+  line-height: 11px;
+  letter-spacing: 0.02em;
+}
+.cal-tag.is-more {
+  background: color-mix(in oklab, var(--color-ink) 22%, transparent);
+  color: var(--color-ink);
+}
+/* A day can hold many charges, so the tooltip scrolls rather than overflowing. */
+.cal-tip-scroll {
+  max-height: 190px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-right: -4px;
+  padding-right: 4px;
+}
+
+/* Nothing recurring yet. A still icon, because pulsing dots read as loading. */
+.sub-empty { padding: 22px 8px 10px; text-align: center; }
+.sub-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface2);
+  color: color-mix(in oklab, var(--color-accent) 70%, var(--color-muted));
+}
+.sub-empty-title { margin-top: 12px; font-size: 13px; font-weight: 500; color: var(--color-ink2); }
+.sub-empty-sub { margin: 6px auto 0; max-width: 34ch; font-size: 11.5px; line-height: 1.55; color: var(--color-muted); }
+
+/* Account-wide AI sweep, and the review it opens before anything is saved. */
+.sweep-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--color-line);
+  border-radius: 9px;
+  background: var(--color-surface);
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--color-ink2);
+  transition: border-color 140ms ease, color 140ms ease;
+}
+.sweep-btn:hover:not(:disabled) { border-color: var(--color-muted); color: var(--color-ink); }
+.sweep-btn:disabled { opacity: 0.5; cursor: default; }
+.sweep-btn .ai-bot { width: 15px; height: 15px; flex: none; }
+.sweep-left { font-size: 10.5px; color: var(--color-muted); }
+
+.sweep-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(4, 8, 14, 0.68);
+  backdrop-filter: blur(3px);
+  animation: sweep-in 180ms ease;
+}
+@keyframes sweep-in { from { opacity: 0; } }
+.sweep-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: min(80vh, 720px);
+  border: 1px solid var(--color-line);
+  border-radius: 16px;
+  background: var(--color-bg);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.sweep-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px 12px;
+}
+.sweep-title { font-size: 15px; font-weight: 600; }
+.sweep-sub { margin-top: 3px; font-size: 12px; color: var(--color-muted); }
+.sweep-count { margin-left: auto; font-size: 13px; color: var(--color-ink2); }
+.sweep-bulk { display: flex; gap: 8px; padding: 0 20px 10px; }
+.sweep-bulk button {
+  border: 1px solid var(--color-line);
+  border-radius: 7px;
+  padding: 3px 9px;
+  font-size: 11px;
+  color: var(--color-ink2);
+}
+.sweep-bulk button:hover { border-color: var(--color-muted); color: var(--color-ink); }
+.sweep-list {
+  flex: 1;
+  overflow-y: auto;
+  border-top: 1px solid var(--color-line);
+  padding: 8px 20px;
+}
+.sweep-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--color-line) 55%, transparent);
+  transition: opacity 140ms ease;
+}
+.sweep-row:last-child { border-bottom: none; }
+.sweep-row.is-out { opacity: 0.42; }
+.sweep-main { min-width: 0; }
+.sweep-desc {
+  display: block;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sweep-meta { display: block; font-size: 10.5px; color: var(--color-muted); }
+.sweep-from { font-size: 11px; color: var(--color-muted); white-space: nowrap; }
+.sweep-arrow { color: var(--color-muted); }
+.sweep-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--color-line);
+  padding: 14px 20px;
+}
+.sweep-cancel {
+  border: 1px solid var(--color-line);
+  border-radius: 9px;
+  padding: 7px 14px;
+  font-size: 13px;
+  color: var(--color-ink2);
+}
+.sweep-cancel:hover { border-color: var(--color-bad); color: var(--color-bad); }
+.sweep-apply {
+  margin-left: auto;
+  border-radius: 9px;
+  background: var(--color-accent);
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+}
+.sweep-apply:disabled { opacity: 0.6; }
+@media (max-width: 640px) {
+  .sweep-row { grid-template-columns: auto auto minmax(0, 1fr); row-gap: 4px; }
+  .sweep-from, .sweep-arrow { grid-column: 3; font-size: 10.5px; }
+  .sweep-arrow { display: none; }
+}
+
+/* Keyword rules the reader sets themselves. The list can grow, so it scrolls. */
+.rules-head {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--color-ink);
+}
+.rules-head svg { color: var(--color-muted); transition: transform 180ms ease; flex: none; }
+.rules-title { font-size: 14px; font-weight: 500; }
+.rules-count { margin-left: 8px; font-size: 11px; color: var(--color-muted); }
+.rules-intro { margin-top: 6px; font-size: 12px; line-height: 1.55; color: var(--color-muted); max-width: 66ch; }
+.rules-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.rules-input {
+  flex: 1 1 200px;
+  min-width: 0;
+  border: 1px solid var(--color-line);
+  border-radius: 9px;
+  background: var(--color-surface2);
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--color-ink);
+  outline: none;
+}
+.rules-input:focus { border-color: var(--color-accent); }
+.rules-filter { flex: 1 1 100%; margin-top: 10px; }
+.rules-add {
+  border-radius: 9px;
+  background: var(--color-accent);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+}
+.rules-add:disabled { opacity: 0.6; }
+.rules-list {
+  margin-top: 12px;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+}
+.rules-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  border-bottom: 1px solid color-mix(in oklab, var(--color-line) 55%, transparent);
+}
+.rules-row:last-child { border-bottom: none; }
+.rules-dot { width: 8px; height: 8px; flex: none; border-radius: 999px; }
+.rules-key {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--color-ink);
+}
+.rules-arrow { color: var(--color-muted); flex: none; }
+.rules-cat { flex: none; color: var(--color-ink2); }
+.rules-del { flex: none; color: var(--color-muted); padding: 2px; border-radius: 6px; }
+.rules-del:hover { color: var(--color-bad); }
+.rules-empty { margin-top: 14px; font-size: 12px; color: var(--color-muted); }
+.rules-foot { margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--color-muted); }
+
+/* Set a rule's keyword by typing it, or by taking it off a real transaction. */
+.rules-mode { display: inline-flex; gap: 2px; margin-top: 14px; padding: 2px; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface2); }
+.rules-mode button { padding: 4px 10px; border-radius: 6px; font-size: 11.5px; color: var(--color-muted); }
+.rules-mode button:hover { color: var(--color-ink); }
+.rules-mode button.is-on { background: var(--color-surface); color: var(--color-ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16); }
+.rules-pick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.rules-month { flex: 0 0 auto; min-width: 150px; }
+
+.cat-tip {
+  min-width: 190px;
+  max-width: 280px;
+  border-radius: 11px;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  padding: 9px 11px;
+  box-shadow: 0 18px 40px rgba(8, 13, 21, 0.35), 0 3px 10px rgba(8, 13, 21, 0.2);
+}
+.cat-tip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--color-line);
+  font-size: 12px;
+  color: var(--color-ink);
+}
+.cat-tip-head span:last-child { margin-left: auto; font-weight: 500; }
+.cat-tip ul { display: grid; gap: 3px; max-height: 210px; overflow-y: auto; }
+.cat-tip li { display: flex; align-items: center; gap: 7px; font-size: 11.5px; }
+.cat-tip-dot { height: 8px; width: 8px; flex: none; border-radius: 2px; }
+.cat-tip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink2); }
+.cat-tip-amt { margin-left: auto; color: var(--color-ink); }
+
+.cat-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.cat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  padding: 3px 9px 3px 7px;
+  font-size: 11.5px;
+  color: var(--color-ink2);
+  transition: color 0.15s, border-color 0.15s, opacity 0.15s;
+}
+.cat-chip:hover { border-color: var(--color-muted); color: var(--color-ink); }
+.cat-chip-dot { height: 8px; width: 8px; border-radius: 2px; transition: background 0.15s; }
+.cat-chip.is-off { opacity: 0.45; }
+.cat-chip.is-off .cat-chip-dot { background: var(--color-muted) !important; }
+
+.cat-legend .span-picker { flex: 0 0 auto; margin-right: 2px; }
+.cat-reset {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 1px dashed var(--color-line);
+  padding: 3px 10px;
+  font-size: 11.5px;
+  color: var(--color-accent);
+}
+.cat-reset:hover { border-color: var(--color-accent); }

@@ -108,15 +108,16 @@ export default function SpendCalendar({
     return [...set].filter(Boolean).sort();
   }, [data, dues]);
 
+  // Opens where the charges are. A cycle's charges mostly fall in the month
+  // before its statement, so following the calendar clock lands on an empty grid.
   const defaultMonth = useMemo(() => {
-    const current = monthKey(new Date());
-    const currentHasSpend = data.some((d) => d.debits > 0 && d.day.startsWith(current));
-    const currentHasBills = dues.some((d) => d.day.startsWith(current));
-    if (currentHasSpend || currentHasBills) return current;
-    const spent = data.filter((d) => d.debits > 0).map((d) => d.day.slice(0, 7)).sort();
-    if (spent.length) return spent[spent.length - 1];
-    return current;
-  }, [data, dues]);
+    const totals = new Map<string, number>();
+    for (const d of data) {
+      if (d.debits > 0) totals.set(d.day.slice(0, 7), (totals.get(d.day.slice(0, 7)) ?? 0) + d.debits);
+    }
+    const busiest = [...totals.entries()].sort((a, b) => b[1] - a[1])[0];
+    return busiest ? busiest[0] : monthKey(new Date());
+  }, [data]);
 
   const [picked, setPicked] = useState<string | null>(null);
   const month = picked && months.includes(picked) ? picked : defaultMonth;
@@ -178,7 +179,7 @@ export default function SpendCalendar({
                 spent over {txns} transaction{txns === 1 ? "" : "s"}
               </span>
             </p>
-            <ul className="cal-tip-list">
+            <ul className="cal-tip-list cal-tip-scroll">
               {spendCards.map((c) => (
                 <li key={c.cardId}>
                   <span className="cal-tip-dot" style={{ background: bankById(c.bankId).color }} />
@@ -308,6 +309,23 @@ export default function SpendCalendar({
               }}
             >
               {i + 1}
+              {/* Which cards were used, capped so a busy day does not turn the
+                  cell into a wall of badges. The tooltip has the full list. */}
+              {(() => {
+                const used = cardsByDay.get(key) ?? [];
+                if (!used.length) return null;
+                const shown = used.slice(0, 3);
+                return (
+                  <span className="cal-tags" aria-hidden>
+                    {shown.map((c) => (
+                      <span key={c.cardId} className="cal-tag" style={{ background: bankById(c.bankId).color, color: bankById(c.bankId).fg ?? "#fff" }}>
+                        {bankById(c.bankId).short}
+                      </span>
+                    ))}
+                    {used.length > shown.length && <span className="cal-tag is-more">+{used.length - shown.length}</span>}
+                  </span>
+                );
+              })()}
               {dueList.length > 0 &&
                 (() => {
                   const open = dueList.filter((x) => !x.settled);
