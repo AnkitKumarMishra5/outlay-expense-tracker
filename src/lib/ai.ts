@@ -1,25 +1,18 @@
-import { CATEGORIES, type CategoryRule } from "./categories";
+import { SPEND_CATEGORIES, matchRule, type CategoryRule } from "./categories";
 import { redact } from "./parser";
 
 const CATEGORY_SYSTEM = `You assign spending categories to Indian credit card statement rows.
+Every row is a charge. Payments, refunds and cashbacks never reach you.
 Input is a JSON array of {"i": number, "d": "merchant description"}.
 Return STRICT JSON {"categories":[{"i":number,"c":"category"}]} covering every input row.
-c must be exactly one of: ${CATEGORIES.join(", ")}.
+c must be exactly one of: ${SPEND_CATEGORIES.join(", ")}.
+Statements abbreviate merchants and run words together ("RAZ*SWIGGYBengaluru" is Swiggy,
+"PARSEKARCHEMISTSDRUGGIST" is a chemist). Read through that. Use "Other" only when the
+description gives no hint at all of what was bought.
 "EMI & Loans" is only for actual instalment or loan rows, never for a purchase that was
-merely flagged as EMI eligible. Card fees, interest and taxes are "Fees & Charges".
-Payments to the card and refunds are "Payments & Refunds".
+merely flagged as EMI eligible. Card fees and interest are "Fees & Charges".
 Tax paid through the card (income tax, advance tax, GST payments, challans) is "Taxes";
 GST charged on a card fee stays "Fees & Charges".`;
-
-/** The reader's own keyword mappings, stated to the model as hard rules. */
-function rulesPrompt(rules: CategoryRule[]): string {
-  if (!rules.length) return "";
-  const lines = rules
-    .slice(0, 200)
-    .map((r) => `- a description containing "${r.keyword}" is "${r.category}"`)
-    .join("\n");
-  return `\n\nThe reader has set these rules. They override everything above:\n${lines}`;
-}
 
 /**
   * Rows per model call. Set by the model's output ceiling, not by taste: one
@@ -71,27 +64,41 @@ async function callModel(
 }
 
 /**
- * Ask the model for a category per row. Only the redacted merchant description
- * leaves the server, never amounts, dates, names or card digits.
+ * A category per charge. The reader's rules are applied here in code first,
+ * and those rows never reach the model, so a rule cannot be argued with. Only
+ * the redacted merchant description leaves the server, never amounts, dates,
+ * names or card digits.
  */
 export async function aiCategorize(
-  rows: { id: string; description: string }[],
+  rows: { id: string; description: string; category?: string }[],
   rules: CategoryRule[] = []
 ): Promise<AiOutcome> {
   const key = process.env.OPENAI_API_KEY;
   if (!key || rows.length === 0) return { status: "unreachable" };
   const out = new Map<string, string>();
-  for (let start = 0; start < rows.length; start += CHUNK) {
-    const slice = rows.slice(start, start + CHUNK);
+  const spendRules = rules.filter((r) => (SPEND_CATEGORIES as readonly string[]).includes(r.category));
+
+  const open: typeof rows = [];
+  for (const row of rows) {
+    const rule = matchRule(row.description, spendRules);
+    if (rule) out.set(row.id, rule.category);
+    else open.push(row);
+  }
+
+  for (let start = 0; start < open.length; start += CHUNK) {
+    const slice = open.slice(start, start + CHUNK);
     const payload = slice.map((r, i) => ({ i, d: redact(r.description).slice(0, 120) }));
-    const answer = await callModel(key, payload, CATEGORY_SYSTEM + rulesPrompt(rules));
+    const answer = await callModel(key, payload, CATEGORY_SYSTEM);
     if (answer === "unreachable") return start === 0 ? { status: "unreachable" } : { status: "unusable" };
     if (answer === "unusable") return { status: "unusable" };
     for (const entry of answer as { i?: number; c?: string }[]) {
       const row = slice[entry?.i ?? -1];
-      if (!row) continue;
-      if (CATEGORIES.includes(entry?.c as (typeof CATEGORIES)[number])) out.set(row.id, entry!.c!);
+      if (!row || !(SPEND_CATEGORIES as readonly string[]).includes(entry?.c ?? "")) continue;
+      // Other is where a guess goes to give up. It never replaces a category
+      // that already says something.
+      if (entry!.c === "Other" && row.category && row.category !== "Other") continue;
+      out.set(row.id, entry!.c!);
     }
   }
-  return out.size ? { status: "ok", categories: out } : { status: "unusable" };
+  return out.size || open.length === 0 ? { status: "ok", categories: out } : { status: "unusable" };
 }

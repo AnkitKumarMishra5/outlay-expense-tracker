@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { currentUserId, unauthorized } from "@/lib/auth";
 import { decryptOrNull } from "@/lib/crypto";
+import { PAYMENT_PATTERN } from "@/lib/categories";
 
 const PAGE = 50;
-
-/** Paying the card back. Everything else a card credits is a refund. */
-const PAYMENT_RE = "payment received|payment thank|cc payment|card payment|bbps|autopay|neft|imps|upi credit|payment - ";
 
 export async function GET(req: NextRequest) {
   const userId = await currentUserId(req);
@@ -46,6 +44,7 @@ export async function GET(req: NextRequest) {
 
   const W = `WHERE ${where.join(" AND ")}`;
   const offset = Math.max(0, Number(p.get("offset") ?? 0) || 0);
+  const limit = Math.min(1000, Math.max(1, Number(p.get("limit") ?? PAGE) || PAGE));
 
   const c = await db();
   const [rows, totals, statementMonths] = await Promise.all([
@@ -56,7 +55,7 @@ export async function GET(req: NextRequest) {
        FROM transactions t JOIN cards ON cards.id = t.card_id
        ${W}
        ORDER BY t.txn_date DESC, t.created_at DESC
-       LIMIT ${PAGE + 1} OFFSET ${offset}`,
+       LIMIT ${limit + 1} OFFSET ${offset}`,
       args
     ),
     c.execute(
@@ -67,7 +66,7 @@ export async function GET(req: NextRequest) {
               COALESCE(SUM(CASE WHEN t.type='credit' THEN t.amount END), 0) AS credits,
               COALESCE(SUM(CASE WHEN t.type='credit' AND t.description ~* $${args.length + 1} THEN t.amount END), 0) AS payments
        FROM transactions t ${W}`,
-      [...args, PAYMENT_RE]
+      [...args, PAYMENT_PATTERN]
     ),
     c.execute(
       `SELECT DISTINCT substr(COALESCE(statement_date, period_end, due_date), 1, 7) AS month
@@ -78,7 +77,7 @@ export async function GET(req: NextRequest) {
     ),
   ]);
 
-  const page = rows.rows.slice(0, PAGE).map((r) => ({
+  const page = rows.rows.slice(0, limit).map((r) => ({
     ...r,
     last4: decryptOrNull(r.last4_enc as string | null, userId),
     last4_enc: undefined,
@@ -86,7 +85,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     transactions: page,
-    more: rows.rows.length > PAGE,
+    more: rows.rows.length > limit,
     offset,
     total: Number(totals.rows[0].n),
     debits: Number(totals.rows[0].debits),

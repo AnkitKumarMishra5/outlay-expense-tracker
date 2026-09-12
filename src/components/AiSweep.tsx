@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import BankBadge from "./BankBadge";
 import CategorySelect from "./CategorySelect";
 import AiOverlay, { BotMark, REVIEW_STAGES } from "./AiOverlay";
 import { useToast } from "./Toasts";
-import { inr } from "@/lib/format";
+import { inr, monthTitle } from "@/lib/format";
 import { play } from "@/lib/sound";
 import type { AiProposal } from "@/lib/aiSweep";
 
@@ -20,13 +20,21 @@ interface AiState {
 type Decision = { keep: boolean; category: string };
 
 /**
- * Ask the model to sort every transaction on the account, then show what it
- * wants to change before anything moves. Cancelling discards the lot.
+ * Ask the model to sort the charges on one statement month, or on every
+ * statement, then show what it wants to change before anything moves.
+ * Cancelling discards the lot.
  */
 export default function AiSweep({ onApplied }: { onApplied: () => void }) {
   const toast = useToast();
   const [ai, setAi] = useState<AiState | null>(null);
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  /** null means every statement. */
+  const [month, setMonth] = useState<string | null>(null);
+  const [months, setMonths] = useState<string[] | null>(null);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [ran, setRan] = useState<string | null>(null);
+  const popRef = useRef<HTMLSpanElement>(null);
   const [saving, setSaving] = useState(false);
   const [proposals, setProposals] = useState<AiProposal[] | null>(null);
   /** Merchant names to stream under the beam while the model reads them. */
@@ -42,19 +50,63 @@ export default function AiSweep({ onApplied }: { onApplied: () => void }) {
   }, []);
   useEffect(loadState, [loadState]);
 
+  // Statement months, and how many spends each scope would send.
+  useEffect(() => {
+    if (!open || months) return;
+    fetch("/api/transactions?type=debit&limit=1")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const list: string[] = d?.months ?? [];
+        setMonths(list);
+        setCounts((c) => ({ ...c, all: Number(d?.total ?? 0) }));
+        setMonth((m) => m ?? list[0] ?? null);
+      })
+      .catch(() => setMonths([]));
+  }, [open, months]);
+
+  useEffect(() => {
+    if (!open || !month || counts[month] !== undefined) return;
+    fetch(`/api/transactions?type=debit&month=${month}&limit=1`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setCounts((c) => ({ ...c, [month]: Number(d.total ?? 0) })))
+      .catch(() => {});
+  }, [open, month, counts]);
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (!popRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+
   if (!ai?.configured) return null;
 
-  async function run() {
+  const scopeLabel = (m: string | null) => (m ? `the ${monthTitle(m)} statement` : "every statement");
+
+  async function run(scope: string | null) {
+    setOpen(false);
+    setRan(scope);
     setBusy(true);
     play("scan");
-    fetch("/api/transactions?limit=60")
+    fetch(`/api/transactions?type=debit&limit=60${scope ? `&month=${scope}` : ""}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         const names: string[] = (d?.transactions ?? []).map((t: { description: string }) => t.description);
         if (names.length) setMerchants(names);
       })
       .catch(() => {});
-    const res = await fetch("/api/transactions/recategorize", { method: "POST" }).catch(() => null);
+    const res = await fetch("/api/transactions/recategorize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(scope ? { month: scope } : {}),
+    }).catch(() => null);
     const data = await res?.json().catch(() => null);
     setBusy(false);
     setMerchants([]);
@@ -67,7 +119,10 @@ export default function AiSweep({ onApplied }: { onApplied: () => void }) {
     const list: AiProposal[] = data.proposals ?? [];
     if (!list.length) {
       play("success");
-      toast.push("Nothing to change", { detail: `All ${data.reviewed} transactions already look right.`, tone: "good" });
+      toast.push("Nothing to change", {
+        detail: `All ${data.reviewed} spends on ${scopeLabel(scope)} already look right.`,
+        tone: "good",
+      });
       return;
     }
     setDecisions(Object.fromEntries(list.map((p) => [p.id, { keep: true, category: p.to }])));
@@ -106,24 +161,80 @@ export default function AiSweep({ onApplied }: { onApplied: () => void }) {
 
   return (
     <>
-      <button
-        onClick={run}
-        disabled={busy || ai.remaining === 0}
-        title={
-          ai.remaining === 0
-            ? "Both runs for this month are used. They come back on the 1st."
-            : "Ask AI to re-sort every transaction, then review what it wants to change"
-        }
-        className="sweep-btn"
-      >
-        <BotMark />
-        {busy ? "Recategorising…" : "Recategorise all"}
-        <span className="sweep-left">{ai.remaining} left this month</span>
-      </button>
+      <span ref={popRef} className="sweep-wrap">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          disabled={busy || ai.remaining === 0}
+          aria-expanded={open}
+          title={
+            ai.remaining === 0
+              ? "Both runs for this month are used. They come back on the 1st."
+              : "Ask AI to re-sort a statement month or every statement, then review what it wants to change"
+          }
+          className="sweep-btn"
+        >
+          <BotMark />
+          {busy ? "Recategorising…" : "Recategorise"}
+          <span className="sweep-left">{ai.remaining} left this month</span>
+        </button>
+
+        {open && (
+          <div className="sweep-pop" role="dialog" aria-label="What to recategorise">
+            <p className="sweep-pop-title">What should AI look at?</p>
+            <button
+              type="button"
+              onClick={() => months?.length && setMonth((m) => m ?? months[0])}
+              className={`sweep-scope ${month ? "is-on" : ""}`}
+              aria-pressed={Boolean(month)}
+            >
+              <span className="sweep-scope-dot" aria-hidden />
+              <span className="sweep-scope-main">
+                <span className="sweep-scope-name">One statement month</span>
+                <select
+                  value={month ?? months?.[0] ?? ""}
+                  onChange={(e) => setMonth(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  disabled={!months?.length}
+                  aria-label="Statement month"
+                  className="sweep-scope-month"
+                >
+                  {(months ?? []).map((m) => (
+                    <option key={m} value={m}>
+                      {monthTitle(m)} statement
+                    </option>
+                  ))}
+                </select>
+              </span>
+              <span className="sweep-scope-n tabular">
+                {month && counts[month] !== undefined ? `${counts[month]} spends` : ""}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMonth(null)}
+              className={`sweep-scope ${month ? "" : "is-on"}`}
+              aria-pressed={!month}
+            >
+              <span className="sweep-scope-dot" aria-hidden />
+              <span className="sweep-scope-main">
+                <span className="sweep-scope-name">Every statement</span>
+                <span className="sweep-scope-hint">The whole history, in one pass</span>
+              </span>
+              <span className="sweep-scope-n tabular">{counts.all !== undefined ? `${counts.all} spends` : ""}</span>
+            </button>
+            <button type="button" onClick={() => run(month)} className="sweep-go" disabled={months === null}>
+              Start review
+            </button>
+            <p className="sweep-pop-foot">
+              Either uses one of your {ai.limit} runs. Nothing is saved until you have looked it over.
+            </p>
+          </div>
+        )}
+      </span>
 
       {busy && (
         <AiOverlay
-          kicker="Checking every category with AI"
+          kicker={ran ? `Checking the ${monthTitle(ran)} statement with AI` : "Checking every statement with AI"}
           title="Reading each transaction and working out what it is"
           footnote="One of your two monthly runs. Only merchant names are sent, never amounts or card details. Nothing is saved until you review it."
           merchants={merchants}
@@ -140,7 +251,7 @@ export default function AiSweep({ onApplied }: { onApplied: () => void }) {
                 <div>
                   <h2 className="sweep-title">Review before anything changes</h2>
                   <p className="sweep-sub">
-                    Read {reviewed} transactions and would change{" "}
+                    Read {reviewed} spends on {scopeLabel(ran)} and would change{" "}
                     <span className="text-ink">{proposals.length}</span>. Nothing is saved until you apply.
                   </p>
                 </div>

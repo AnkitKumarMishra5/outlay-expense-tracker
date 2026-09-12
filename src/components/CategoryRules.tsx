@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import CategorySelect from "./CategorySelect";
 import { useToast } from "./Toasts";
-import { CATEGORIES } from "@/lib/categories";
+import { SPEND_CATEGORIES } from "@/lib/categories";
 import { categoryColor, useChartTokens } from "@/lib/chartTokens";
 import { play } from "@/lib/sound";
 import { monthTitle } from "@/lib/format";
@@ -25,14 +25,16 @@ export default function CategoryRules() {
   const [rules, setRules] = useState<Rule[] | null>(null);
   const [open, setOpen] = useState(false);
   const [keyword, setKeyword] = useState("");
-  const [category, setCategory] = useState<string>(CATEGORIES[0]);
+  const [category, setCategory] = useState<string>(SPEND_CATEGORIES[0]);
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
   /** Picking a real transaction beats remembering how a merchant is spelled. */
-  const [picking, setPicking] = useState(false);
+  const [picking, setPicking] = useState(true);
   const [month, setMonth] = useState<string | null>(null);
-  const [months, setMonths] = useState<string[]>([]);
-  const [found, setFound] = useState<{ id: string; description: string; txn_date: string }[] | null>(null);
+  const [months, setMonths] = useState<string[] | null>(null);
+  /** One entry per description, with how often it appears on that month's statements. */
+  const [found, setFound] = useState<{ description: string; n: number }[] | null>(null);
+  const [spends, setSpends] = useState(0);
 
   const load = useCallback(() => {
     fetch("/api/category-rules")
@@ -44,39 +46,37 @@ export default function CategoryRules() {
 
   // Months here are statement months, as everywhere else.
   useEffect(() => {
-    if (!picking || month) return;
+    if (!picking || months) return;
     let live = true;
-    fetch("/api/transactions")
+    fetch("/api/transactions?limit=1")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!live) return;
-        const list: string[] = d?.months ?? [];
-        setMonths(list);
-        setMonth(list[0] ?? new Date().toISOString().slice(0, 7));
-      })
-      .catch(() => live && setMonth(new Date().toISOString().slice(0, 7)));
+      .then((d) => live && setMonths(d?.months ?? []))
+      .catch(() => live && setMonths([]));
     return () => {
       live = false;
     };
-  }, [picking, month]);
+  }, [picking, months]);
 
+  // Every spend on that month's statements, not the first page of them.
+  // Credits are left out: they are always Credits, so a rule has nothing to do.
   useEffect(() => {
     if (!picking || !month) return;
     let live = true;
-    fetch(`/api/transactions?month=${month}`)
+    fetch(`/api/transactions?month=${month}&type=debit&limit=1000`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!live) return;
-        const seen = new Set<string>();
-        const list = (d?.transactions ?? []).filter((t: { description: string }) => {
-          const k = t.description.toLowerCase();
-          if (seen.has(k)) return false;
-          seen.add(k);
-          return true;
-        });
-        setFound(list);
+        const counts = new Map<string, { description: string; n: number }>();
+        for (const t of (d?.transactions ?? []) as { description: string }[]) {
+          const k = t.description.trim().toLowerCase();
+          const entry = counts.get(k);
+          if (entry) entry.n++;
+          else counts.set(k, { description: t.description.trim(), n: 1 });
+        }
+        setSpends(Number(d?.total ?? 0));
+        setFound([...counts.values()].sort((a, b) => b.n - a.n || a.description.localeCompare(b.description)));
       })
-      .catch(() => setFound([]));
+      .catch(() => live && setFound([]));
     return () => {
       live = false;
     };
@@ -141,19 +141,11 @@ export default function CategoryRules() {
       {open && (
         <>
           <div className="rules-mode" role="group" aria-label="How to set the keyword">
+            <button type="button" onClick={() => setPicking(true)} aria-pressed={picking} className={picking ? "is-on" : ""}>
+              Pick a transaction
+            </button>
             <button type="button" onClick={() => setPicking(false)} aria-pressed={!picking} className={picking ? "" : "is-on"}>
               Type a keyword
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setFound(null);
-                setPicking(true);
-              }}
-              aria-pressed={picking}
-              className={picking ? "is-on" : ""}
-            >
-              Pick a transaction
             </button>
           </div>
 
@@ -163,20 +155,21 @@ export default function CategoryRules() {
                 value={month ?? ""}
                 onChange={(e) => {
                   setFound(null);
-                  setMonth(e.target.value);
+                  setMonth(e.target.value || null);
                 }}
                 aria-label="Statement month to pick a transaction from"
                 className="rules-input rules-month"
               >
-                {months.length === 0 && <option value="">No statements yet</option>}
-                {months.map((m) => (
+                <option value="">{months === null ? "Loading…" : months.length ? "Statement month" : "No statements yet"}</option>
+                {(months ?? []).map((m) => (
                   <option key={m} value={m}>
-                    {monthTitle(m)}
+                    {monthTitle(m)} statement
                   </option>
                 ))}
               </select>
               <select
                 value=""
+                disabled={!month}
                 onChange={(e) => {
                   if (!e.target.value) return;
                   setKeyword(e.target.value);
@@ -186,15 +179,18 @@ export default function CategoryRules() {
                 className="rules-input"
               >
                 <option value="">
-                  {found === null
-                    ? "Loading…"
-                    : found.length === 0
-                      ? "Nothing in that month"
-                      : `${found.length} to choose from`}
+                  {!month
+                    ? "Pick a statement month first"
+                    : found === null
+                      ? "Loading…"
+                      : found.length === 0
+                        ? "No spends on that statement"
+                        : `${spends} spend${spends === 1 ? "" : "s"} on the ${monthTitle(month)} statement`}
                 </option>
                 {(found ?? []).map((t) => (
-                  <option key={t.id} value={t.description}>
-                    {t.txn_date} · {t.description}
+                  <option key={t.description.toLowerCase()} value={t.description}>
+                    {t.description}
+                    {t.n > 1 ? `  ×${t.n}` : ""}
                   </option>
                 ))}
               </select>
@@ -256,7 +252,7 @@ export default function CategoryRules() {
 
           <p className="rules-foot">
             Rules apply when a statement is read and when AI runs. They do not rewrite transactions
-            already saved. Change those from the Transactions page, or run Recategorise all.
+            already saved. Change those from the Transactions page, or run Recategorise there.
           </p>
         </>
       )}

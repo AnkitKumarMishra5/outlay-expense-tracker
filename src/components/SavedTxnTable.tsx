@@ -99,6 +99,7 @@ export default function SavedTxnTable({
                   <td className="hidden py-2 pr-4 sm:table-cell">
                     <CategorySelect
                       value={t.category}
+                      credit={t.type === "credit"}
                       disabled={busy === t.id}
                       onChange={(next) => send(t.id, { category: next }, `Category set to ${next}`)}
                       label={`Category for ${t.description}`}

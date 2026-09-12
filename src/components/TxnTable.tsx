@@ -91,6 +91,7 @@ export default function TxnTable({
                     {canEdit ? (
                       <CategorySelect
                         value={t.category ?? "Other"}
+                        credit={credit}
                         disabled={busy === t.id}
                         onChange={(next) => setCategory(t, i, next)}
                         label={`Category for ${t.description}`}

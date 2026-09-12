@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { monthKey, monthTitle, shiftMonth } from "@/lib/format";
-import { play } from "@/lib/sound";
 
 /** The dashboard's month control. */
 export default function MonthPicker({
@@ -44,7 +43,6 @@ export default function MonthPicker({
     const pool = by < 0 ? months.filter((m) => m < here) : months.filter((m) => m > here);
     const next = by < 0 ? pool[0] : pool[pool.length - 1];
     if (next) {
-      play("tick");
       onChange(next);
     }
   };
@@ -66,7 +64,6 @@ export default function MonthPicker({
       <button
         type="button"
         onClick={() => {
-          play("select");
           setOpen((v) => !v);
         }}
         aria-expanded={open}
@@ -98,7 +95,6 @@ export default function MonthPicker({
             role="option"
             aria-selected={value === null}
             onClick={() => {
-              play("select");
               onChange(null);
               setOpen(false);
             }}
@@ -114,7 +110,6 @@ export default function MonthPicker({
               role="option"
               aria-selected={m === value}
               onClick={() => {
-                play("select");
                 onChange(m);
                 setOpen(false);
               }}

@@ -20,8 +20,6 @@ export type Cue =
   | "delete"
   /** The session locked. */
   | "lock"
-  /** Cards flicking past each other as the deck reorders. */
-  | "riffle"
   /** One card sliding over another. */
   | "slide"
   /** A card landing square on the deck. */
@@ -254,25 +252,6 @@ export function play(cue: Cue) {
       tone(c, t, 740, 0.08, 0.42, "sine");
       tone(c, t + 0.09, 494, 0.13, 0.4, "sine");
       break;
-    case "riffle": {
-      // A riffle heard from arm's length is mostly rustle, with the individual
-      // edges well underneath it. Three earlier attempts led with the edges and
-      // all read as clicking; measured, this one carries the same peak but a
-      // crest factor two decibels lower, which is the prickliness leaving.
-      burst(c, t, 0.34, 0.34, 950, 0.2, 0.9, "bandpass", 0.3, 2600);
-      burst(c, t + 0.02, 0.3, 0.24, 1500, 0.2, 1.1, "bandpass", 0.35, 2600);
-      const TICKS = 40;
-      let at = t + 0.012;
-      for (let i = 0; i < TICKS; i++) {
-        const arc = Math.sin((Math.PI * i) / (TICKS - 1));
-        burst(c, at, 0.016, 0.11 * (0.6 + 0.4 * arc), 560 + Math.random() * 260, 0.3, 2, "bandpass", 0.22, 2600);
-        at += 0.0098 - 0.004 * arc + Math.random() * 0.0018;
-      }
-      // The two packets marry, then the deck is squared on the table.
-      tone(c, at + 0.012, 128, 0.13, 0.26, "sine", 72);
-      burst(c, at + 0.012, 0.06, 0.3, 760, 0.35, 2.2, "bandpass", 0.12, 2600);
-      break;
-    }
     case "slide":
       // One card drawn across another, then set down.
       sweep(c, t, 3400, 520, 0.14, 0.62, 0.8);

@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { aiCategorize } from "./ai";
 import { AiState, aiConfigured, releaseSweep, reserveSweep, sweepState } from "./aiQuota";
-import { CATEGORIES } from "./categories";
+import { SPEND_CATEGORIES } from "./categories";
 import { revalidate } from "./revalidate";
 import { loadRules } from "./categoryRules";
 import { decryptOrNull } from "./crypto";
@@ -28,13 +28,14 @@ export interface AiSweepResult {
 }
 
 /**
- * Read every transaction on the account and ask the model what each one is.
+ * Read the charges on one statement month, or on every statement, and ask
+ * the model what each one is.
  *
  * Nothing is written. The answer comes back as proposals for the reader to
  * accept, edit or throw away. A run touches the whole history at once, and
  * applying that silently would leave them with no way to tell what moved.
  */
-export async function sweepAccount(userId: string): Promise<AiSweepResult> {
+export async function sweepAccount(userId: string, month: string | null = null): Promise<AiSweepResult> {
   const c = await db();
   const idle = await sweepState(c.execute, userId);
   if (!aiConfigured()) {
@@ -62,12 +63,15 @@ export async function sweepAccount(userId: string): Promise<AiSweepResult> {
     `SELECT t.id, t.description, t.category, t.amount, t.txn_date, t.statement_id,
             cards.card_label, cards.bank_id, cards.last4_enc
        FROM transactions t JOIN cards ON cards.id = t.card_id
-      WHERE t.user_id = $1
+      WHERE t.user_id = $1 AND t.type = 'debit'
+        ${month ? `AND t.statement_id IN (SELECT id FROM statements WHERE user_id = $1
+               AND substr(COALESCE(statement_date, period_end, due_date), 1, 7) = $2)` : ""}
       ORDER BY t.txn_date DESC`,
-    [userId]
+    month ? [userId, month] : [userId]
   );
   if (!rs.rows.length) {
-    return { ok: false, status: 400, error: "There are no transactions to review.", reviewed: 0, proposals: [], ai: await give() };
+    const error = month ? "There are no spends on that statement to review." : "There are no spends to review.";
+    return { ok: false, status: 400, error, reviewed: 0, proposals: [], ai: await give() };
   }
 
   const rows = rs.rows.map((r) => ({
@@ -117,14 +121,14 @@ export async function applySweep(
   changes: { id: string; category: string }[]
 ): Promise<{ applied: number }> {
   const valid = changes.filter(
-    (ch) => typeof ch.id === "string" && ch.id.length <= 64 && (CATEGORIES as readonly string[]).includes(ch.category)
+    (ch) => typeof ch.id === "string" && ch.id.length <= 64 && (SPEND_CATEGORIES as readonly string[]).includes(ch.category)
   );
   if (!valid.length) return { applied: 0 };
 
   const c = await db();
   const ids = valid.map((ch) => ch.id);
   const owned = await c.execute(
-    "SELECT id, statement_id FROM transactions WHERE user_id = $1 AND id = ANY($2::text[])",
+    "SELECT id, statement_id FROM transactions WHERE user_id = $1 AND type = 'debit' AND id = ANY($2::text[])",
     [userId, ids]
   );
   const statementOf = new Map(owned.rows.map((r) => [r.id as string, r.statement_id as string]));

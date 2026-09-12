@@ -144,18 +144,28 @@ export default function TransactionsPage() {
         <h1 className="text-xl font-semibold tracking-tight">Transactions</h1>
         <p className="text-sm text-ink2">
           <span className="tabular">{summary.total}</span> row{summary.total === 1 ? "" : "s"}
-          <span className="text-muted"> · </span>
-          <span className="tabular">{inr(summary.debits)}</span> spends
-          {summary.payments > 0 && (
+          {type !== "credit" && (
             <>
               <span className="text-muted"> · </span>
-              <span className="tabular text-good">{inr(summary.payments)}</span> paid back
+              <span className="tabular">{inr(summary.debits)}</span> spends
             </>
           )}
-          {summary.credits - summary.payments > 1 && (
+          {summary.credits > 0 && (
             <>
               <span className="text-muted"> · </span>
-              <span className="tabular text-good">{inr(summary.credits - summary.payments)}</span> credits &amp; refunds
+              <span className="tabular text-good">{inr(summary.credits)}</span> credits
+              {/* Both parts live inside credits, so they read as a breakdown of it. */}
+              {summary.payments > 0 && summary.credits - summary.payments > 1 && (
+                <span className="text-muted">
+                  {" ("}
+                  <span className="tabular text-ink2">{inr(summary.payments)}</span> payments +{" "}
+                  <span className="tabular text-ink2">{inr(summary.credits - summary.payments)}</span> refunds &amp; cashbacks)
+                </span>
+              )}
+              {summary.payments > 0 && summary.credits - summary.payments <= 1 && (
+                <span className="text-muted"> (all payments)</span>
+              )}
+              {summary.payments === 0 && <span className="text-muted"> (all refunds &amp; cashbacks)</span>}
             </>
           )}
         </p>
@@ -278,6 +288,7 @@ export default function TransactionsPage() {
                   <td className="py-2 pr-4">
                     <CategorySelect
                       value={r.category}
+                      credit={r.type === "credit"}
                       disabled={busy === r.id}
                       onChange={(next) => setRowCategory(r, next)}
                       label={`Category for ${r.description}`}

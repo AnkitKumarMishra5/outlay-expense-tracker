@@ -69,7 +69,7 @@ export interface StatementRow {
 }
 
 export interface Analytics {
-  totals: { debits: number; credits: number; fees: number; txns: number };
+  totals: { debits: number; credits: number; payments?: number; fees: number; txns: number; spend_txns?: number; credit_txns?: number };
   byCategory: { category: string; total: number }[];
   /** The same categories a month earlier, for the movement panel. */
   byCategoryPrev?: { category: string; total: number }[];

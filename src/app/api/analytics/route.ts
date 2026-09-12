@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { Range, monthWindow, rangeStart, shiftMonth } from "@/lib/format";
 import { currentUserId, unauthorized } from "@/lib/auth";
 import { decryptOrNull } from "@/lib/crypto";
+import { PAYMENT_PATTERN } from "@/lib/categories";
 
 export async function GET(req: NextRequest) {
   const userId = await currentUserId(req);
@@ -79,14 +80,17 @@ export async function GET(req: NextRequest) {
       `SELECT
          COALESCE(SUM(CASE WHEN type='debit' THEN amount END), 0) AS debits,
          COALESCE(SUM(CASE WHEN type='credit' THEN amount END), 0) AS credits,
+         COALESCE(SUM(CASE WHEN type='credit' AND description ~* $${args.length + 1} THEN amount END), 0) AS payments,
          COALESCE(SUM(CASE WHEN type='debit' AND is_fee=1 THEN amount END), 0) AS fees,
-         COUNT(*)::int AS txns
+         COUNT(*)::int AS txns,
+         COUNT(*) FILTER (WHERE type='debit')::int AS spend_txns,
+         COUNT(*) FILTER (WHERE type='credit')::int AS credit_txns
        FROM transactions ${W}`,
-      args
+      [...args, PAYMENT_PATTERN]
     ),
     c.execute(
       `SELECT category, SUM(amount) AS total, COUNT(*)::int AS n
-       FROM transactions ${W} AND type='debit' AND category != 'Payments & Refunds'
+       FROM transactions ${W} AND type='debit' AND category != 'Credits'
        GROUP BY category ORDER BY total DESC`,
       args
     ),
@@ -140,7 +144,7 @@ export async function GET(req: NextRequest) {
     prev
       ? c.execute(
           `SELECT category, SUM(amount) AS total
-           FROM transactions ${PW} AND type='debit' AND category != 'Payments & Refunds'
+           FROM transactions ${PW} AND type='debit' AND category != 'Credits'
            GROUP BY category`,
           prevArgs
         )

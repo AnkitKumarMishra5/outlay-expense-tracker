@@ -77,7 +77,7 @@ export function parseAmount(s: string): number {
 }
 
 const CREDIT_RE =
-  /\b(?:payment received|cc payment|card payment|payment thank|neft|imps|upi credit|refund|reversal|reversed|cashback|credit adjustment)\b/i;
+  /\b(?:payment received|payment credit|cc payment|card payment|payment thank|autopay|neft|imps|upi credit|refund|reversal|reversed|chargeback|cashback|cash back|credit adjustment)\b/i;
 
 const SKIP_RE =
   /statement of account|page \d|opening balance|closing balance|total amount due|minimum amount due|payment due date|credit limit|available credit|reward point|gstin|important information/i;
@@ -113,7 +113,7 @@ export function heuristicParse(text: string, layout?: LayoutRow[], rules: Catego
       description,
       amount,
       type,
-      category: categorize(description, rules),
+      category: categorize(description, rules, type),
       isFee: FEE_RE.test(description),
       isInternational: INTL_RE.test(description),
     });

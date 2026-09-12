@@ -28,7 +28,7 @@ const CATEGORY_LIGHT: Record<string, string> = {
   Insurance: "#5b5bcc",
   "Fees & Charges": "#b233b2",
   Taxes: "#8a5a2b",
-  "Payments & Refunds": "#878722",
+  Credits: "#878722",
   Other: "#8a93a3",
 };
 
@@ -46,7 +46,7 @@ const CATEGORY_DARK: Record<string, string> = {
   Insurance: "#8484e0",
   "Fees & Charges": "#d363d3",
   Taxes: "#c08a4e",
-  "Payments & Refunds": "#b3b345",
+  Credits: "#b3b345",
   Other: "#8797ab",
 };
 

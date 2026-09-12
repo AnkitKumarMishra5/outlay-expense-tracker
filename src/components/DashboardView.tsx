@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import Link from "next/link";
 import MonthPicker from "./MonthPicker";
 import { billCycle, today as billToday } from "@/lib/bills";
@@ -65,11 +65,6 @@ export default function DashboardView({
   onSettle?: (id: string, settled: boolean) => Promise<void> | void;
   empty?: React.ReactNode;
 }) {
-  // The trend keeps its own span rather than following the month.
-  const [trendSpan, setTrendSpan] = useState<3 | 6 | 12>(6);
-  // The same money lands in different months depending on which date you group
-  // by: the day it was charged, or the statement that billed it.
-  const [trendBy, setTrendBy] = useState<"charged" | "billed">("billed");
 
   const money = (n: number) => inr(n);
 
@@ -85,6 +80,10 @@ export default function DashboardView({
   // Banks round their own totals, so a balanced cycle can leave paise behind.
   const settledUp = Math.abs(carriedOver) < 1;
   const inCredit = carriedOver < 0;
+  // The credit rows themselves, less paying the card. The gap between due and
+  // spends also carries each bank's rounding, so it is only the fallback.
+  const refundRows =
+    data.totals.payments === undefined ? 0 : Number(data.totals.credits) - Number(data.totals.payments);
 
   const fees = Number(data.totals.fees);
   const feeList =
@@ -103,6 +102,8 @@ export default function DashboardView({
     lead?: boolean;
     tone?: "accent" | "spend" | "quiet" | "good" | "bad";
     hint?: string;
+    /** A quiet second line under the figure. */
+    detail?: string;
   }[] = [
     {
       label: "Total due",
@@ -115,7 +116,7 @@ export default function DashboardView({
       hint: "Every statement in this period added up, as each card billed it.",
     },
     {
-      label: "Billed spends",
+      label: "Spends",
       value: billedSpend,
       fmt: money,
       tone: "spend" as const,
@@ -124,8 +125,8 @@ export default function DashboardView({
       hint: "Charges on the statements in this period, as each one reported them. A statement dated the 12th bills a cycle that began in the previous month, so this is not the same as spend by calendar date.",
     },
     {
-      label: settledUp ? "Carried over" : inCredit ? "Credits & refunds" : "Unpaid carry-over",
-      value: settledUp ? 0 : Math.abs(carriedOver),
+      label: settledUp ? "Carried over" : inCredit ? "Refunds & cashbacks" : "Unpaid carry-over",
+      value: settledUp ? 0 : inCredit && refundRows > 0.5 ? refundRows : Math.abs(carriedOver),
       fmt: money,
       tone: settledUp ? ("quiet" as const) : inCredit ? ("good" as const) : ("bad" as const),
       hint: settledUp
@@ -146,12 +147,13 @@ export default function DashboardView({
       value: Number(data.totals.txns),
       fmt: (n: number) => String(Math.round(n)),
       tone: "quiet" as const,
+      detail:
+        data.totals.spend_txns !== undefined
+          ? `${plural(Number(data.totals.spend_txns), "spend")} · ${plural(Number(data.totals.credit_txns ?? 0), "credit")}`
+          : undefined,
     },
   ];
 
-  /** The months the spend trend is showing, so both charts cover the same run. */
-  const trendRun = (trendBy === "billed" ? timeline?.byStatementMonth : timeline?.byMonth)?.slice(-trendSpan) ?? [];
-  const recentMonths = new Set(trendRun.map((m) => m.month));
 
   const statementsHref = demo ? "/register" : "/statements";
   const transactionsHref = demo ? "/register" : "/transactions";
@@ -201,6 +203,7 @@ export default function DashboardView({
                 >
                   <CountUp value={s.value} format={s.fmt} />
                 </p>
+                {s.detail && <p className="stat-cell-detail tabular">{s.detail}</p>}
                 {s.op && (
                   <span className="stat-op" role="img" aria-label={s.opLabel}>
                     {s.op}
@@ -306,52 +309,7 @@ export default function DashboardView({
           </div>
 
           <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="card rise min-w-0 p-5" style={{ "--d": "160ms" } as React.CSSProperties}>
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-medium text-ink2">Spend trend</h2>
-                <div className="span-picker ml-auto" role="group" aria-label="Group spend by">
-                  <button
-                    type="button"
-                    onClick={() => setTrendBy("billed")}
-                    aria-pressed={trendBy === "billed"}
-                    title="Grouped by the statement that billed each charge"
-                    className={trendBy === "billed" ? "is-on" : ""}
-                  >
-                    Billed
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTrendBy("charged")}
-                    aria-pressed={trendBy === "charged"}
-                    title="Grouped by the day each charge was made"
-                    className={trendBy === "charged" ? "is-on" : ""}
-                  >
-                    Charged
-                  </button>
-                </div>
-                <div className="span-picker" role="group" aria-label="How far the trend looks back">
-                  {([3, 6, 12] as const).map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => setTrendSpan(n)}
-                      aria-pressed={trendSpan === n}
-                      className={trendSpan === n ? "is-on" : ""}
-                    >
-                      {n === 12 ? "1 year" : `${n}m`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {timeline ? (
-                <TrendChart
-                  data={trendRun.map((m) => ({ month: m.month, debits: Number(m.debits) }))}
-                  highlight={trendBy === "billed" ? month ?? undefined : undefined}
-                />
-              ) : (
-                <div className="shimmer h-[240px] w-full" />
-              )}
-            </div>
+            <SpendTrendPanel timeline={timeline} month={month} />
             {timeline ? (
               <Subscriptions subs={timeline.subscriptions} />
             ) : (
@@ -366,37 +324,140 @@ export default function DashboardView({
               </div>
             )}
 
-            {/* The spend trend says how much; this says what it went on, on
-                the same basis and over the same run. */}
-            <div className="card rise min-w-0 p-5 lg:col-span-2" style={{ "--d": "240ms" } as React.CSSProperties}>
-              <div className="mb-4 flex flex-wrap items-baseline gap-2">
-                <h2 className="text-sm font-medium text-ink2">Where it went, month by month</h2>
-                <span className="text-xs text-muted">
-                  {trendBy === "billed" ? "grouped by the statement that billed it" : "grouped by the day it was charged"}
-                </span>
-              </div>
-              {timeline ? (
-                <CategoryTrend
-                  data={(trendBy === "billed" ? timeline.byCategoryStatementMonth : timeline.byCategoryMonth)
-                    .filter((r) => recentMonths.has(r.month))
-                    .map((r) => ({ month: r.month, category: r.category, debits: Number(r.debits) }))}
-                />
-              ) : (
-                <>
-                  <div className="shimmer h-[260px] w-full" />
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-                      <div key={i} className="shimmer h-[24px] w-[92px]" />
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+            <CategoryTrendPanel timeline={timeline} />
           </div>
             </>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+type Span = 3 | 6 | 12;
+type GroupBy = "charged" | "billed";
+
+/** The months a panel is showing, on the basis it groups by. */
+function runOf(timeline: Timeline, by: GroupBy, span: Span) {
+  return (by === "billed" ? timeline.byStatementMonth : timeline.byMonth).slice(-span);
+}
+
+/**
+ * Each Over time panel owns its controls. Keeping that state inside the panel
+ * means a click in one re-renders only that panel, and memo keeps the others
+ * still while the dashboard around them updates.
+ */
+const SpendTrendPanel = memo(function SpendTrendPanel({
+  timeline,
+  month,
+}: {
+  timeline: Timeline | null;
+  month: string | null | undefined;
+}) {
+  const [span, setSpan] = useState<Span>(6);
+  // The same money lands in different months depending on which date you group
+  // by: the day it was charged, or the statement that billed it.
+  const [by, setBy] = useState<GroupBy>("billed");
+  const data = useMemo(
+    () => (timeline ? runOf(timeline, by, span).map((m) => ({ month: m.month, debits: Number(m.debits) })) : []),
+    [timeline, by, span]
+  );
+  return (
+    <div className="card rise min-w-0 p-5" style={{ "--d": "160ms" } as React.CSSProperties}>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-medium text-ink2">Spend trend</h2>
+        <RunControls by={by} onBy={setBy} span={span} onSpan={setSpan} />
+      </div>
+      {timeline ? (
+        <TrendChart data={data} highlight={by === "billed" ? month ?? undefined : undefined} />
+      ) : (
+        <div className="shimmer h-[240px] w-full" />
+      )}
+    </div>
+  );
+});
+
+const CategoryTrendPanel = memo(function CategoryTrendPanel({ timeline }: { timeline: Timeline | null }) {
+  const [span, setSpan] = useState<Span>(6);
+  const [by, setBy] = useState<GroupBy>("billed");
+  const data = useMemo(() => {
+    if (!timeline) return [];
+    const months = new Set(runOf(timeline, by, span).map((m) => m.month));
+    return (by === "billed" ? timeline.byCategoryStatementMonth : timeline.byCategoryMonth)
+      .filter((r) => months.has(r.month))
+      .map((r) => ({ month: r.month, category: r.category, debits: Number(r.debits) }));
+  }, [timeline, by, span]);
+  return (
+    <div className="card rise min-w-0 p-5 lg:col-span-2" style={{ "--d": "240ms" } as React.CSSProperties}>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-medium text-ink2">Where it went, month by month</h2>
+        <RunControls by={by} onBy={setBy} span={span} onSpan={setSpan} />
+      </div>
+      {timeline ? (
+        <CategoryTrend data={data} />
+      ) : (
+        <>
+          <div className="shimmer h-[260px] w-full" />
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="shimmer h-[24px] w-[92px]" />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+});
+
+/** Which date groups the money, and how far back to look. */
+function RunControls({
+  by,
+  onBy,
+  span,
+  onSpan,
+}: {
+  by: GroupBy;
+  onBy: (next: GroupBy) => void;
+  span: Span;
+  onSpan: (next: Span) => void;
+}) {
+  return (
+    <>
+      <div className="span-picker ml-auto" role="group" aria-label="Group spend by">
+        <button
+          type="button"
+          onClick={() => onBy("billed")}
+          aria-pressed={by === "billed"}
+          title="Grouped by the statement that billed each charge"
+          className={by === "billed" ? "is-on" : ""}
+        >
+          Billed
+        </button>
+        <button
+          type="button"
+          onClick={() => onBy("charged")}
+          aria-pressed={by === "charged"}
+          title="Grouped by the day each charge was made"
+          className={by === "charged" ? "is-on" : ""}
+        >
+          Charged
+        </button>
+      </div>
+      <div className="span-picker" role="group" aria-label="How far back to look">
+        {([3, 6, 12] as const).map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onSpan(n)}
+            aria-pressed={span === n}
+            className={span === n ? "is-on" : ""}
+          >
+            {n === 12 ? "1 year" : `${n}m`}
+          </button>
+        ))}
+      </div>
+    </>
   );
 }

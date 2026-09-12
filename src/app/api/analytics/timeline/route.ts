@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
     ),
     c.execute(
       `SELECT substr(txn_date,1,7) AS month, category, SUM(amount) AS debits
-       FROM transactions ${TW} AND type='debit' AND category != 'Payments & Refunds'
+       FROM transactions ${TW} AND type='debit' AND category != 'Credits'
        GROUP BY month, category ORDER BY month`,
       trendArgs
     ),
@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
          t.category, SUM(t.amount) AS debits
        FROM transactions t JOIN statements s ON s.id = t.statement_id
        ${TW.replace("user_id", "t.user_id").replace("card_id", "t.card_id")}
-         AND t.type='debit' AND t.category != 'Payments & Refunds'
+         AND t.type='debit' AND t.category != 'Credits'
          AND COALESCE(s.statement_date, s.period_end, s.due_date) IS NOT NULL
        GROUP BY month, t.category ORDER BY month`,
       trendArgs
@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
     c.execute(
       `SELECT t.txn_date, t.description, t.amount, cards.id AS card_id, cards.card_label, cards.bank_id, cards.last4_enc
        FROM transactions t JOIN cards ON cards.id = t.card_id
-       WHERE t.user_id = $1 AND t.type = 'debit' AND t.category <> 'Payments & Refunds'
+       WHERE t.user_id = $1 AND t.type = 'debit' AND t.category <> 'Credits'
        ORDER BY t.txn_date`,
       [userId]
     ),

@@ -2,6 +2,7 @@ import { DEMO_CARDS, DEMO_DUES, DEMO_TXNS } from "./demo";
 import { Analytics, Timeline } from "./types";
 import { detectSubscriptions } from "./subscriptions";
 import { Range, rangeStart } from "./format";
+import { PAYMENT_PATTERN } from "./categories";
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
@@ -45,7 +46,7 @@ export function demoAnalytics(range: Range, cardIndex: number | null, month?: st
   const dayCard = new Map<string, { debits: number; txns: number }>();
 
   for (const t of debits) {
-    if (t.category !== "Payments & Refunds") {
+    if (t.category !== "Credits") {
       byCategory.set(t.category, (byCategory.get(t.category) ?? 0) + t.amount);
       const name = t.desc.replace(/[^A-Za-z ]+/g, " ").trim().split(/\s+/).slice(0, 2).join(" ").toUpperCase();
       if (name.length > 2) {
@@ -91,7 +92,7 @@ export function demoAnalytics(range: Range, cardIndex: number | null, month?: st
     const billed = demoStatementMonth(t);
     runByMonth.set(charged, (runByMonth.get(charged) ?? 0) + t.amount);
     if (billed) runByStatementMonth.set(billed, (runByStatementMonth.get(billed) ?? 0) + t.amount);
-    if (t.category === "Payments & Refunds") continue;
+    if (t.category === "Credits") continue;
     const a = `${charged}|${t.category}`;
     catByMonth.set(a, (catByMonth.get(a) ?? 0) + t.amount);
     if (billed) {
@@ -108,7 +109,7 @@ export function demoAnalytics(range: Range, cardIndex: number | null, month?: st
     [...m.entries()].sort().map(([month, d]) => ({ month, debits: round(d) }));
 
   const subscriptions = detectSubscriptions(
-    DEMO_TXNS.filter((t) => t.type === "debit" && t.category !== "Payments & Refunds").map((t) => {
+    DEMO_TXNS.filter((t) => t.type === "debit" && t.category !== "Credits").map((t) => {
       const card = DEMO_CARDS[t.card];
       return {
         cardId: card.id,
@@ -127,8 +128,11 @@ export function demoAnalytics(range: Range, cardIndex: number | null, month?: st
     totals: {
       debits: round(debits.reduce((a, t) => a + t.amount, 0)),
       credits: round(credits.reduce((a, t) => a + t.amount, 0)),
+      payments: round(credits.filter((t) => new RegExp(PAYMENT_PATTERN, "i").test(t.desc)).reduce((a, t) => a + t.amount, 0)),
       fees: round(debits.filter((t) => t.category === "Fees & Charges").reduce((a, t) => a + t.amount, 0)),
       txns: rows.length,
+      spend_txns: debits.length,
+      credit_txns: credits.length,
     },
     byMonth: run(runByMonth),
     byStatementMonth: run(runByStatementMonth),
@@ -181,7 +185,7 @@ export function demoAnalytics(range: Range, cardIndex: number | null, month?: st
       // The demo's statements carry no previous balance, so the bill is
       // exactly what was charged.
       // Charges before credits, so the strip reads the same way it does on a
-      // real statement: total due = billed spends less credits and refunds.
+      // real statement: total due = spends less refunds and cashbacks.
       total_debits: d.debits,
       txn_count: null,
       settled: d.settled,

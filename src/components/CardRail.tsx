@@ -163,7 +163,6 @@ export default function CardRail({
 
   function changeSort(nextSort: SortMode) {
     if (nextSort === sort) return;
-    play("riffle");
     setSort(nextSort);
   }
 

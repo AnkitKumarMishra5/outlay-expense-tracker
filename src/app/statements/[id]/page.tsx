@@ -93,8 +93,8 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {([
-          { k: "Spend", n: Number(s.total_debits), text: null },
-          { k: "Payments & credits", n: Number(s.total_credits), text: null },
+          { k: "Spends", n: Number(s.total_debits), text: null },
+          { k: "Credits", n: Number(s.total_credits), text: null },
           { k: "Total due", n: s.total_due != null ? Number(s.total_due) : null, text: null },
           { k: "Due date", n: null, text: s.due_date ?? "n/a" },
         ] as { k: string; n: number | null; text: string | null }[]).map((tile, i) => (

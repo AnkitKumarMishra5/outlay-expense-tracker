@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, uid, now } from "@/lib/db";
 import { currentUserId, unauthorized } from "@/lib/auth";
-import { CATEGORIES } from "@/lib/categories";
+import { SPEND_CATEGORIES } from "@/lib/categories";
 import { loadRules } from "@/lib/categoryRules";
 
 const MAX_RULES = 200;
@@ -22,8 +22,8 @@ export async function POST(req: NextRequest) {
 
   if (keyword.length < 2) return NextResponse.json({ error: "Give the keyword at least two characters." }, { status: 400 });
   if (keyword.length > 60) return NextResponse.json({ error: "Keep the keyword under 60 characters." }, { status: 400 });
-  if (!(CATEGORIES as readonly string[]).includes(category)) {
-    return NextResponse.json({ error: "That is not a category." }, { status: 400 });
+  if (!(SPEND_CATEGORIES as readonly string[]).includes(category)) {
+    return NextResponse.json({ error: "That is not a category a charge can have." }, { status: 400 });
   }
 
   const c = await db();

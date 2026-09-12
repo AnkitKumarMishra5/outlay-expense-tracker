@@ -13,11 +13,32 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const sets: string[] = [];
   const args: unknown[] = [];
 
+  const c = await db();
+  const current = await c.execute("SELECT type, category FROM transactions WHERE id = $1 AND user_id = $2", [id, userId]);
+  if (!current.rows.length) return NextResponse.json({ error: "Not found." }, { status: 404 });
+  const nextType = body.type === "debit" || body.type === "credit" ? body.type : (current.rows[0].type as string);
+
+  // Credits is decided by the type, not chosen: anything the card gave back is
+  // a credit, and a charge can never be one.
+  let category: string | null = null;
   if (typeof body.category === "string") {
     if (!CATEGORIES.includes(body.category as (typeof CATEGORIES)[number])) {
       return NextResponse.json({ error: "Unknown category." }, { status: 400 });
     }
-    args.push(body.category);
+    if (nextType === "credit" && body.category !== "Credits") {
+      return NextResponse.json({ error: "A credit is always filed under Credits." }, { status: 400 });
+    }
+    if (nextType === "debit" && body.category === "Credits") {
+      return NextResponse.json({ error: "Credits is only for money the card gave back." }, { status: 400 });
+    }
+    category = body.category;
+  } else if (nextType === "credit" && current.rows[0].category !== "Credits") {
+    category = "Credits";
+  } else if (nextType === "debit" && current.rows[0].category === "Credits") {
+    category = "Other";
+  }
+  if (category) {
+    args.push(category);
     sets.push(`category = $${args.length}`);
   }
   if (body.amount !== undefined) {
@@ -47,7 +68,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   }
   if (sets.length === 0) return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
 
-  const c = await db();
   return c.tx(async (q) => {
     args.push(id, userId);
     const res = await q(

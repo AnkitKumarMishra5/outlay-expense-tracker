@@ -108,6 +108,11 @@ const MIGRATIONS = [
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS stated_debits DOUBLE PRECISION`,
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS stated_credits DOUBLE PRECISION`,
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS paid_at TEXT`,
+  // Credits replaced "Payments & Refunds". A credit is always Credits, and a
+  // charge that was filed there belongs nowhere in particular until reviewed.
+  `UPDATE transactions SET category = 'Other' WHERE type = 'debit' AND category IN ('Payments & Refunds', 'Credits')`,
+  `UPDATE transactions SET category = 'Credits' WHERE type = 'credit' AND category <> 'Credits'`,
+  `DELETE FROM category_rules WHERE category IN ('Payments & Refunds', 'Credits')`,
 ];
 
 function makePool(): Pool {

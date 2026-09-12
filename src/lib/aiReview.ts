@@ -71,7 +71,11 @@ export async function reviewStatements(userId: string, statementIds: string[]): 
       statements.push({ id, cardId, reviewed: 0, changed: 0, changes: [], skipped: "no-reviews-left" });
       continue;
     }
-    const rs = await c.execute("SELECT id, description, category FROM transactions WHERE statement_id = $1 AND user_id = $2", [id, userId]);
+    // Credits are Credits by their type, so only charges are worth asking about.
+    const rs = await c.execute(
+      "SELECT id, description, category FROM transactions WHERE statement_id = $1 AND user_id = $2 AND type = 'debit'",
+      [id, userId]
+    );
     if (!rs.rows.length) {
       statements.push({ id, cardId, reviewed: 0, changed: 0, changes: [], skipped: "no-transactions" });
       continue;

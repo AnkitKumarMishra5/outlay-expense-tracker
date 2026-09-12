@@ -12,11 +12,14 @@ export const CATEGORIES = [
   "Insurance",
   "Fees & Charges",
   "Taxes",
-  "Payments & Refunds",
+  "Credits",
   "Other",
 ] as const;
 
 type Category = (typeof CATEGORIES)[number];
+
+/** What a charge can be. Credits is kept for money the card gave back. */
+export const SPEND_CATEGORIES = CATEGORIES.filter((c) => c !== "Credits");
 
 /** Join merchant fragments into one case-insensitive alternation. */
 const any = (...parts: string[]) => new RegExp(parts.join("|"), "i");
@@ -38,16 +41,6 @@ const w = (s: string) => `\\b${s}\\b`;
  * "Amazon Fresh" land in Groceries and "Reliance Digital" in Shopping.
  */
 const RULES: [RegExp, Category][] = [
-  [
-    any(
-      "payment received", "payment thank", "payment credit", "card payment", "cc payment",
-      "autopay", "auto ?debit", "standing instruction", "e-?mandate", "nach ",
-      w("neft"), w("imps"), w("rtgs"), "upi credit", "net ?banking",
-      "cashback", "cash back", "refund", "reversal", "reversed", "chargeback",
-      "dispute credit", "credit adjustment", "goodwill", "excess payment"
-    ),
-    "Payments & Refunds",
-  ],
   [
     // Tax paid with the card, which is not the same as the GST levied on a
     // card fee, which stays under Fees & Charges further down.
@@ -215,19 +208,66 @@ export interface CategoryRule {
   category: string;
 }
 
-export function categorize(description: string, rules: CategoryRule[] = []): Category {
+/** Lowercase, punctuation to spaces, reference numbers gone, one space between words. */
+function normalise(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b\d{4,}\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * The reader's rule that fits a description best, if any does.
+ *
+ * A keyword has to start where a word starts, so "gas" never fires inside
+ * "Vegas", but it may run on into the next word, because statements glue
+ * merchants to cities ("SWIGGYBengaluru"). PDFs also drop spaces outright
+ * ("Department ofPosts"), so a keyword of six letters or more is tried again
+ * with every space removed from both sides. A match at a word start beats a
+ * run-together one, and between two of the same kind the longer keyword wins.
+ */
+export function matchRule<R extends CategoryRule>(description: string, rules: R[]): R | null {
+  const text = ` ${normalise(description)}`;
+  const joined = text.replace(/ /g, "");
+  let best: { rule: R; score: number } | null = null;
+  for (const rule of rules) {
+    const key = normalise(rule.keyword);
+    if (!key) continue;
+    const compact = key.replace(/ /g, "");
+    const score = text.includes(` ${key}`)
+      ? 2000 + compact.length
+      : compact.length >= 6 && joined.includes(compact)
+        ? 1000 + compact.length
+        : 0;
+    if (score && (!best || score > best.score)) best = { rule, score };
+  }
+  return best?.rule ?? null;
+}
+
+export function categorize(
+  description: string,
+  rules: CategoryRule[] = [],
+  type: "debit" | "credit" = "debit"
+): Category {
+  // Money the card gave back is a credit whatever the description says, so a
+  // cashback never ends up filed as a purchase or as Other.
+  if (type === "credit") return "Credits";
   // The reader's own rules come first. They were written to override what the
   // built-in list would otherwise have decided.
-  const text = description.toLowerCase();
-  for (const r of rules) {
-    const key = r.keyword.trim().toLowerCase();
-    if (key && text.includes(key) && (CATEGORIES as readonly string[]).includes(r.category)) {
-      return r.category as Category;
-    }
-  }
+  const own = matchRule(
+    description,
+    rules.filter((r) => (SPEND_CATEGORIES as readonly string[]).includes(r.category))
+  );
+  if (own) return own.category as Category;
   for (const [re, cat] of RULES) if (re.test(description)) return cat;
   return "Other";
 }
+
+/** Paying the card back. Everything else a card credits is a refund or a cashback. */
+export const PAYMENT_PATTERN =
+  "payment received|payment thank|cc payment|card payment|bbps|autopay|neft|imps|upi credit|payment - ";
 
 export const FEE_RE =
   /annual fee|joining fee|membership fee|renewal fee|late fee|late payment|over ?limit|overlimit|processing fee|service charge|cash advance fee|reward redemption fee/i;

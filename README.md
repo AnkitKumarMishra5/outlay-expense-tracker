@@ -32,7 +32,7 @@ Scope is narrow on purpose: credit card statements only. Not budgeting, not net 
   <img src="docs/screenshots/calendar.png" width="900" alt="Calendar: spend heat per day with two-letter bank tags for the cards used, amber badges for bills due and green ticks for settled ones">
 </p>
 
-**Every transaction, one page.** Filter by card, by statement, by category or by text, and correct a category inline. Or hand the whole account to the model once and review every change before it lands.
+**Every transaction, one page.** Filter by card, by statement, by category or by text, and correct a category inline. Or have AI re-sort a statement month, or the whole history, and review every change before it lands.
 
 <p align="center">
   <img src="docs/screenshots/transactions.png" width="900" alt="Transactions page: filters for search, card, statement and category, an account-wide AI recategorise button, and a table of every transaction across every card">

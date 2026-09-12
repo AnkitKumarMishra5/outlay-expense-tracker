@@ -54,6 +54,7 @@ export default function DashboardSkeleton() {
               <div key={i} className="stat-cell">
                 <Block className="h-3 w-20 rounded" i={i} />
                 <Block className="mt-2 h-6 w-24 rounded" i={i} />
+                {i === 4 && <Block className="mt-1.5 h-2.5 w-28 rounded" i={i} />}
               </div>
             ))}
           </div>
@@ -160,8 +161,8 @@ export default function DashboardSkeleton() {
             </Panel>
             <Panel className="p-5 lg:col-span-2">
               <div className="flex items-center justify-between gap-2">
-                <Block className="h-4 w-56 rounded" />
-                <Block className="h-3 w-36 rounded" />
+                <Block className="h-4 w-52 rounded" />
+                <Block className="h-7 w-80 max-w-full rounded-lg" />
               </div>
               <Block className="mt-4 h-[260px] w-full rounded-lg" />
               <div className="mt-3 flex flex-wrap gap-1.5">

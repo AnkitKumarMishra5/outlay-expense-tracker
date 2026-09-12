@@ -25,7 +25,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, applied });
   }
 
-  const result = await sweepAccount(userId);
+  const month = typeof body?.month === "string" && /^\d{4}-\d{2}$/.test(body.month) ? body.month : null;
+  const result = await sweepAccount(userId, month);
   if (!result.ok) {
     return NextResponse.json({ error: result.error, ai: result.ai }, { status: result.status ?? 500 });
   }
