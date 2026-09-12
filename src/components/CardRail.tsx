@@ -21,12 +21,11 @@ export interface CardStat {
   billedTxns?: number | null;
 }
 
-type SortMode = "bank" | "pending" | "due" | "name";
+type SortMode = "bank" | "due" | "name";
 
-/** Two money sorts that mean different things, then the plain ones. */
+/** The money sort, then the two for finding a card. */
 const SORTS: { value: SortMode; label: string; title: string }[] = [
   { value: "due", label: "Due", title: "What each card billed this cycle, largest first" },
-  { value: "pending", label: "Pending", title: "What is still unpaid, largest first" },
   { value: "bank", label: "Bank", title: "Grouped by bank" },
   { value: "name", label: "A–Z", title: "By card name" },
 ];
@@ -141,13 +140,6 @@ export default function CardRail({
       switch (sort) {
         case "due":
           return (sb?.debits ?? 0) - (sa?.debits ?? 0) || a.card_label.localeCompare(b.card_label);
-        case "pending":
-          // A card with nothing left to pay sinks below one that has.
-          return (
-            (sb?.nextDueAmount ?? 0) - (sa?.nextDueAmount ?? 0) ||
-            (sb?.debits ?? 0) - (sa?.debits ?? 0) ||
-            a.card_label.localeCompare(b.card_label)
-          );
         case "name":
           return a.card_label.localeCompare(b.card_label);
         case "bank":
