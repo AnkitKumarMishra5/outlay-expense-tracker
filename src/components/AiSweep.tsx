@@ -112,7 +112,11 @@ export default function AiSweep({ onApplied }: { onApplied: () => void }) {
     setMerchants([]);
     if (data?.ai) setAi(data.ai);
     if (!res?.ok) {
-      toast.push(data?.error ?? "The review could not be run.", { tone: "bad" });
+      toast.push(data?.error ?? "The review could not be run.", {
+        tone: "bad",
+        duration: 9000,
+        action: { label: "Try again", onClick: () => run(scope) },
+      });
       return;
     }
     setReviewed(Number(data.reviewed ?? 0));

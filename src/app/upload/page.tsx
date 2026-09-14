@@ -73,6 +73,8 @@ interface AiProgress {
 interface AiOutcome {
   statements: (AiStatementResult & { file: string; card: CardRow | null })[];
   error?: string;
+  /** The saved statements to send again when the review failed. */
+  retry?: { statementId: string; item: Item }[];
 }
 
 const STATUS_LABEL: Record<Status, string> = {
@@ -172,6 +174,18 @@ export default function Upload() {
       return { ...item, status: "failed", error: data?.error ?? "Could not read this file." };
     }
     const parsed = data as Parsed;
+    // Caught here rather than at save, where it would only say there is nothing to save.
+    if (parsed.transactions.length === 0) {
+      return {
+        ...item,
+        parsed,
+        status: "failed",
+        error:
+          (parsed.summary.totalDue ?? 0) > 0
+            ? "The amount due was read, but none of the transactions were. Nothing will be saved from this file."
+            : "No transactions were found on this statement, so there is nothing to save.",
+      };
+    }
     return {
       ...item,
       parsed,
@@ -291,6 +305,18 @@ export default function Upload() {
       return;
     }
 
+    await runReview(review);
+  }
+
+  /** The AI half of saving, kept apart so a failed review can be tried again without saving twice. */
+  async function runReview(review: { statementId: string; item: Item }[]) {
+    const patch = (id: string, next: Partial<Item>) =>
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...next } : i)));
+    const spentCopy = "This card has had both of its AI reviews this month, so the keyword categories were kept. They come back on the 1st.";
+    setBusy(true);
+    setAiOutcome(null);
+    for (const x of review) patch(x.item.id, { status: "ai", aiNote: undefined, aiTone: undefined });
+
     // One model call for the whole batch, one review off each card involved.
     play("scan");
     const deck = [...new Set(review.map((r) => r.item.cardId))]
@@ -319,7 +345,7 @@ export default function Upload() {
       const error = body.error ?? "The AI could not review these statements right now. Your categories are unchanged, and this did not use up a review.";
       for (const x of review) patch(x.item.id, { status: "saved", aiTone: "warn", aiNote: error });
       toast.push("AI review did not happen", { detail: error, tone: "warn", duration: 7000 });
-      setAiOutcome({ statements: [], error });
+      setAiOutcome({ statements: [], error, retry: review });
       return;
     }
     play("sparkle");
@@ -373,7 +399,8 @@ export default function Upload() {
     duplicates: duplicates.size,
     needsCard: items.filter((i) => i.status === "needs-card").length,
     needsPassword: items.filter((i) => i.status === "needs-password").length,
-    rejected: items.filter((i) => i.status === "rejected" || i.status === "failed").length,
+    rejected: items.filter((i) => i.status === "rejected").length,
+    failed: items.filter((i) => i.status === "failed").length,
     saved: items.filter((i) => i.status === "saved").length,
   };
   const parsedCount = items.filter((i) => i.parsed).length;
@@ -430,7 +457,8 @@ export default function Upload() {
               {counts.needsCard > 0 && <span className="rounded-md border border-warn/40 bg-warn/10 px-2 py-1 text-warn">{counts.needsCard} need a card</span>}
               {counts.duplicates > 0 && <span className="rounded-md border border-bad/40 bg-bad/10 px-2 py-1 text-bad">{counts.duplicates} duplicate</span>}
               {counts.needsPassword > 0 && <span className="rounded-md border border-warn/40 bg-warn/10 px-2 py-1 text-warn">{counts.needsPassword} need a password</span>}
-              {counts.rejected > 0 && <span className="rounded-md border border-bad/40 bg-bad/10 px-2 py-1 text-bad">{counts.rejected} rejected</span>}
+              {counts.failed > 0 && <span className="rounded-md border border-bad/40 bg-bad/10 px-2 py-1 text-bad">{counts.failed} failed</span>}
+              {counts.rejected > 0 && <span className="rounded-md border border-bad/40 bg-bad/10 px-2 py-1 text-bad">{counts.rejected} not a statement</span>}
               {counts.saved > 0 && <span className="rounded-md border border-good/40 bg-good/10 px-2 py-1 text-good">{counts.saved} saved</span>}
             </div>
           </div>
@@ -902,6 +930,17 @@ export default function Upload() {
           )}
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
+            {aiOutcome.error && aiOutcome.retry?.length ? (
+              <button
+                type="button"
+                onClick={() => runReview(aiOutcome.retry!)}
+                disabled={busy}
+                className="ai-btn px-4 py-2 text-sm disabled:opacity-50"
+              >
+                <BotMark />
+                Try again
+              </button>
+            ) : null}
             <Link href="/statements" className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90">
               Continue to statements
             </Link>

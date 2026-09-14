@@ -8,7 +8,6 @@ import { inr } from "@/lib/format";
 export interface SavedTxn {
   id: string;
   txn_date: string;
-  txn_time?: string | null;
   description: string;
   amount: number;
   type: string;
@@ -98,7 +97,6 @@ export default function SavedTxnTable({
                 >
                   <td className="whitespace-nowrap py-2 pr-4 text-ink2 tabular">
                     {t.txn_date}
-                    {t.txn_time && <span className="block text-[11px] leading-tight text-muted">{t.txn_time}</span>}
                   </td>
                   <td className="max-w-[11rem] truncate py-2 pr-4 sm:max-w-[26rem]" title={t.description}>
                     {t.description}

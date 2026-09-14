@@ -4,6 +4,8 @@ export interface Detection {
   bankId: string | null;
   bankName: string | null;
   last4: string | null;
+  /** Fewer than four digits left unmasked, e.g. SBI's "XX30", for matching when last4 is missing. */
+  lastDigits: string | null;
   productName: string | null;
   looksLikeStatement: boolean;
   confidence: "high" | "low" | "none";
@@ -122,6 +124,10 @@ export function detectCard(text: string): Detection {
   let last4: string | null = null;
   const masked = head.match(/(?:[X*x•]{2,}[\s-]*){2,}(\d{4})\b/);
   if (masked) last4 = masked[1];
+  // "XXXX XXXX XXXX XX30": only two digits printed. Kept apart from last4 so
+  // it can narrow a match without ever being taken for the full four.
+  const partial = last4 ? null : head.match(/(?:[X*x•]{4}[\s-]+){3}[X*x•]{1,3}(\d{1,3})\b/);
+  const lastDigits = partial ? partial[1] : null;
   if (!last4) {
     const labelled = head.match(/card\s*(?:number|no\.?)?[^0-9\n]{0,20}(?:[X*x•\d]{4}[\s-]*){2,}(\d{4})\b/i);
     if (labelled) last4 = labelled[1];
@@ -138,6 +144,7 @@ export function detectCard(text: string): Detection {
 
   return {
     bankId,
+    lastDigits,
     bankName: bank ? bank.name : null,
     productName,
     last4,

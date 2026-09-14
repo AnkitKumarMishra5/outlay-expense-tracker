@@ -98,10 +98,15 @@ export async function POST(req: NextRequest) {
   const detection = detectCard(extracted.text);
   const sameBank = detection.bankId ? allCards.filter((r) => r.bank_id === detection.bankId) : [];
   const exact = detection.last4 ? sameBank.find((r) => r.last4 === detection.last4) ?? null : null;
+  // Some issuers print only the last two digits. That picks a card only when exactly one of yours ends that way.
+  const endsWith = !detection.last4 && detection.lastDigits
+    ? sameBank.filter((r) => r.last4?.endsWith(detection.lastDigits!))
+    : [];
+  const byDigits = endsWith.length === 1 ? endsWith[0] : null;
   const soleUnnumbered =
     !detection.last4 && sameBank.length === 1 ? sameBank[0] : null;
   const conflicting = Boolean(detection.last4) && sameBank.length > 0 && !exact;
-  const matched = chosen ?? exact ?? soleUnnumbered;
+  const matched = chosen ?? exact ?? byDigits ?? soleUnnumbered;
 
   if (extracted.password && matched) {
     let known: string | null = null;

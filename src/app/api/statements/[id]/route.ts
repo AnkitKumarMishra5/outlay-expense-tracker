@@ -13,7 +13,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const stmt = await c.execute(`SELECT s.*, cards.card_label, cards.bank_id, cards.bank_name, cards.last4_enc
           FROM statements s JOIN cards ON cards.id = s.card_id WHERE s.id = $1 AND s.user_id = $2`, [id, userId]);
   if (stmt.rows.length === 0) return NextResponse.json({ error: "Not found." }, { status: 404 });
-  const txns = await c.execute("SELECT * FROM transactions WHERE statement_id = $1 AND user_id = $2 ORDER BY txn_date, txn_time NULLS LAST, description", [id, userId]);
+  const txns = await c.execute("SELECT * FROM transactions WHERE statement_id = $1 AND user_id = $2 ORDER BY txn_date, description", [id, userId]);
   const statement = {
     ...stmt.rows[0],
     last4: decryptOrNull(stmt.rows[0].last4_enc as string | null, userId),

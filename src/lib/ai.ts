@@ -79,6 +79,8 @@ export async function aiCategorize(
   const spendRules = rules.filter((r) => (SPEND_CATEGORIES as readonly string[]).includes(r.category));
 
   const open: typeof rows = [];
+  // Rows the model gave a valid answer for, whether or not that answer changed anything.
+  let answered = 0;
   for (const row of rows) {
     const rule = matchRule(row.description, spendRules);
     if (rule) out.set(row.id, rule.category);
@@ -94,11 +96,14 @@ export async function aiCategorize(
     for (const entry of answer as { i?: number; c?: string }[]) {
       const row = slice[entry?.i ?? -1];
       if (!row || !(SPEND_CATEGORIES as readonly string[]).includes(entry?.c ?? "")) continue;
+      answered++;
       // Other is where a guess goes to give up. It never replaces a category
       // that already says something.
       if (entry!.c === "Other" && row.category && row.category !== "Other") continue;
       out.set(row.id, entry!.c!);
     }
   }
-  return out.size || open.length === 0 ? { status: "ok", categories: out } : { status: "unusable" };
+  // An answer that keeps every category as it was is still an answer. Only a
+  // reply with nothing usable in it is unreadable.
+  return answered > 0 || open.length === 0 ? { status: "ok", categories: out } : { status: "unusable" };
 }

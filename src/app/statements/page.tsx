@@ -155,6 +155,7 @@ export default function Statements() {
                                 ? `statement ${s.statement_date}`
                                 : `uploaded ${s.created_at.slice(0, 10)}`}{" "}
                             · {s.txn_count} transactions
+                            {s.due_date && <> · due {s.due_date}</>}
                           </p>
                           <span className="mt-1.5 inline-flex">
                             <PaidToggle

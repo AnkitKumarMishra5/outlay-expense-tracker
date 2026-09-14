@@ -137,7 +137,7 @@ const RULES: [RegExp, Category][] = [
       "airtel", "vodafone", w("vi"), "vi recharge", "bsnl", "mtnl", "jio ?fib", "jio ?recharge",
       "jio ?postpaid", "jio ?prepaid", "reliance jio", "act fibernet", "hathway", "den network",
       w("gtpl"), "excitel", "spectra", "railwire", "broadband", "fibernet", "internet bill",
-      "landline", "postpaid bill", "mobile recharge", "prepaid recharge",
+      "landline", "postpaid bill", "mobile recharge", "prepaid recharge", "recharges?",
       "tata power", "electricity", "bescom", w("mseb"), "msedcl", "adani elec", "torrent power",
       w("cesc"), w("tneb"), w("kseb"), "pspcl", "uppcl", "power bill",
       "tata sky", "tata play", w("d2h"), "sun direct", w("dth"),

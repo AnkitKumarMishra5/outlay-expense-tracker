@@ -101,10 +101,10 @@ export async function POST(req: NextRequest) {
     );
     for (const t of txns) {
       await q(
-        `INSERT INTO transactions (id, user_id, statement_id, card_id, txn_date, txn_time, description, amount, type, category, is_fee, is_international, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        `INSERT INTO transactions (id, user_id, statement_id, card_id, txn_date, description, amount, type, category, is_fee, is_international, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
-          uid(), userId, stmtId, body.cardId, t.date, t.time && /^\d{2}:\d{2}$/.test(t.time) ? t.time : null,
+          uid(), userId, stmtId, body.cardId, t.date,
           t.description.slice(0, 200), t.amount, t.type,
           t.category ?? "Other", t.isFee ? 1 : 0, t.isInternational ? 1 : 0, ts,
         ]

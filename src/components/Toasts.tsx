@@ -6,16 +6,23 @@ import { play } from "@/lib/sound";
 
 type Tone = "info" | "good" | "warn" | "bad";
 
+interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface Toast {
   id: number;
   message: string;
   detail?: string;
   tone: Tone;
+  duration: number;
+  action?: ToastAction;
   leaving?: boolean;
 }
 
 interface ToastApi {
-  push: (message: string, options?: { detail?: string; tone?: Tone; duration?: number }) => void;
+  push: (message: string, options?: { detail?: string; tone?: Tone; duration?: number; action?: ToastAction }) => void;
 }
 
 const Ctx = createContext<ToastApi>({ push: () => {} });
@@ -77,7 +84,7 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
       const duration = options?.duration ?? 4200;
       const tone = options?.tone ?? "info";
       play(tone === "good" ? "success" : tone === "bad" ? "error" : "tick");
-      setToasts((list) => [...list.slice(-3), { id, message, detail: options?.detail, tone }]);
+      setToasts((list) => [...list.slice(-3), { id, message, detail: options?.detail, tone, duration, action: options?.action }]);
       setTimeout(() => remove(id), duration);
     },
     [remove]
@@ -101,6 +108,18 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{t.message}</p>
                     {t.detail && <p className="mt-0.5 text-xs leading-snug text-ink2">{t.detail}</p>}
+                    {t.action && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          remove(t.id);
+                          t.action!.onClick();
+                        }}
+                        className="mt-2 rounded-md border border-line px-2.5 py-1 text-xs text-ink hover:border-accent hover:text-accent"
+                      >
+                        {t.action.label}
+                      </button>
+                    )}
                   </div>
                 </div>
                 <button
@@ -114,7 +133,7 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
                 </button>
                 <span
                   className={`toast-life absolute bottom-0 left-0 h-[2px] ${TONE_CLASS[t.tone]} bg-current opacity-40`}
-                  style={{ animationDuration: "4200ms" }}
+                  style={{ animationDuration: `${t.duration}ms` }}
                 />
               </div>
             ))}

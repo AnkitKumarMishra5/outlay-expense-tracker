@@ -13,8 +13,14 @@ const DATE_RE = /^(\d{2})[\/\-.](\d{2})[\/\-.](\d{2,4})\b/;
  */
 const LEADING_NOISE_RE = /^(.{0,10}?)(\d{2})[\/\-.](\d{2})[\/\-.](\d{2,4})\b/;
 
-/** "19Jul 2026", "22 Jul 2026". HDFC runs the day into the month name. */
-const NAMED_DATE_RE = /^(\d{1,2})\s?([A-Za-z]{3,9})\.?,?\s+(\d{4})\b/;
+/**
+ * "19Jul 2026", "22 Jul 2026", "24 Aug 26", "24-Aug-26". HDFC runs the day into
+ * the month name, SBI prints a two-digit year. A figure like "50.00" is never a year.
+ */
+const NAMED_DATE_RE = /^(\d{1,2})[\s-]?([A-Za-z]{3,9})\.?,?[\s\-']+(\d{4}|\d{2})\b(?![.,]\d)/;
+
+/** "Aug 24, 2026", month first. */
+const MONTH_FIRST_ROW_RE = /^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4}|\d{2})\b(?![.,]\d)/;
 
 function rowStart(line: string): { rest: string; date: string | null } | null {
   const direct = line.match(DATE_RE);
@@ -26,6 +32,12 @@ function rowStart(line: string): { rest: string; date: string | null } | null {
     if (iso) return { rest: line.slice(named[0].length).trim(), date: iso };
   }
 
+  const monthFirst = line.match(MONTH_FIRST_ROW_RE);
+  if (monthFirst) {
+    const iso = fromTextDate(monthFirst[2], monthFirst[1], monthFirst[3]);
+    if (iso) return { rest: line.slice(monthFirst[0].length).trim(), date: iso };
+  }
+
   const loose = line.match(LEADING_NOISE_RE);
   if (!loose) return null;
   const prefix = loose[1];
@@ -33,7 +45,8 @@ function rowStart(line: string): { rest: string; date: string | null } | null {
   if (/[A-Za-z]{3,}/.test(prefix)) return null;
   return { rest: line.slice(loose[0].length).trim(), date: toISO(loose[2], loose[3], loose[4]) };
 }
-const MONEY_RE = /((?:\d{1,3}(?:,\d{2,3})*|\d+)\.\d{2})\s*(Cr|CR|cr|Dr|DR)?\.?/g;
+/** An amount and its marker: "Cr"/"Dr", or SBI's bare "C"/"D", never the start of a word. */
+const MONEY_RE = /((?:\d{1,3}(?:,\d{2,3})*|\d+)\.\d{2})\s*(Cr|CR|cr|Dr|DR|C|D)?(?![A-Za-z])\.?/g;
 
 function lastAmount(rest: string) {
   MONEY_RE.lastIndex = 0;
@@ -50,7 +63,7 @@ function lastAmount(rest: string) {
 function cleanDescription(raw: string): string {
   return raw
     .replace(/^[|\-–—:\s]+/, "")
-    .replace(/^,?\s*\d{1,2}:\d{2}(?::\d{2})?\s+/, "")
+    .replace(/^,?\s*\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?\s+/, "")
     .replace(/^,\s*\d{3,4}\b\s*/, "")
     .replace(/^\d{8,}\s+(?=\S)/, "")
     .replace(/^EMI\s+(?!principal|interest|instal|conversion|booking|due|amount)/i, "")
@@ -96,11 +109,6 @@ export function heuristicParse(text: string, layout?: LayoutRow[], rules: Catego
     if (!am) continue;
     const date = head.date;
     if (!date) continue;
-    // Some issuers print the time right after the date. It is kept, not
-    // thrown away with the rest of the description's leading noise.
-    const clock = rest.match(/^,?\s*(\d{1,2}):(\d{2})(?::\d{2})?\s+/);
-    const time =
-      clock && Number(clock[1]) < 24 && Number(clock[2]) < 60 ? `${clock[1].padStart(2, "0")}:${clock[2]}` : undefined;
     let description = cleanDescription(rest.slice(0, am.index));
     if (description.length < 3) {
       const above = (lines[i - 1] ?? "").trim();
@@ -112,10 +120,11 @@ export function heuristicParse(text: string, layout?: LayoutRow[], rules: Catego
     const amount = parseAmount(am[1]);
     if (!Number.isFinite(amount) || amount <= 0) continue;
     const marker = am[2]?.toLowerCase();
-    const type = marker === "cr" || (marker !== "dr" && CREDIT_RE.test(description)) ? "credit" : "debit";
+    const credit = marker === "cr" || marker === "c";
+    const debit = marker === "dr" || marker === "d";
+    const type = credit || (!debit && CREDIT_RE.test(description)) ? "credit" : "debit";
     transactions.push({
       date,
-      time,
       description,
       amount,
       type,
@@ -144,7 +153,8 @@ const MONTHS: Record<string, string> = {
   jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
 };
 
-const TEXT_DATE = String.raw`(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})`;
+/** "12 Sep 2026", and SBI's "13 Aug 26". Never the start of a figure like "26.00". */
+const TEXT_DATE = String.raw`(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{4}|\d{2})(?![\d.,])`;
 /** What issuers call the day a statement was made: Axis prints "Statement Generation Date". */
 const STATEMENT_DATE_LABEL = String.raw`statement (?:generation |issue )?date|date of statement|bill(?:ing)? date|statement generated on`;
 /** A heading that names exactly the credits column, never "Credit Limit" or "Payment Due Date". */
@@ -167,8 +177,10 @@ function nearLabel(text: string, labels: RegExp, lookahead = 6, skip?: RegExp): 
 
 function fromTextDate(dd: string, mon: string, yyyy: string): string | undefined {
   const mm = MONTHS[mon.slice(0, 3).toLowerCase()];
-  if (!mm) return undefined;
-  return `${yyyy}-${mm}-${dd.padStart(2, "0")}`;
+  const day = Number(dd);
+  if (!mm || day < 1 || day > 31) return undefined;
+  const year = yyyy.length === 2 ? `20${yyyy}` : yyyy;
+  return `${year}-${mm}-${dd.padStart(2, "0")}`;
 }
 
 function findTextDate(text: string, labels: RegExp): string | undefined {
@@ -424,6 +436,16 @@ export function extractSummary(text: string, layout?: LayoutRow[]): StatementSum
   summary.statedDebits ??= table.statedDebits;
   summary.statedCredits ??= table.statedCredits;
 
+  // An account summary set as a grid, headings wrapped over several lines above
+  // one row of figures. Only used when those figures reconcile.
+  const grid = gridSummary(layout);
+  if (grid) {
+    summary.statedDebits = grid.statedDebits;
+    summary.statedCredits = grid.statedCredits;
+    summary.previousBalance = grid.previousBalance;
+    summary.totalDue ??= grid.totalDue;
+  }
+
   // The issuer's own arithmetic, when it prints it, outranks every guess above.
   const sum = equationSummary(text);
   if (sum.statedDebits !== undefined) summary.statedDebits = sum.statedDebits;
@@ -484,6 +506,79 @@ function equationSummary(text: string): Partial<StatementSummary> {
     }
   }
   return {};
+}
+
+type GridRole = "previous" | "credit" | "debit" | "total";
+
+/** What an account summary column holds, read from its heading. Order matters: "Total Outstanding" is a total, not a debit. */
+function gridRole(label: string): GridRole | null {
+  const l = label.toLowerCase();
+  if (/\blimit\b|reward|points?\b|milestone/.test(l)) return null;
+  if (/total (?:outstanding|amount due|payment due|dues?)|closing balance|amount payable|new balance/.test(l)) return "total";
+  if (/previous|opening|last statement|brought forward/.test(l)) return "previous";
+  if (/payment|credit|reversal|refund|cashback/.test(l)) return "credit";
+  if (/purchase|debit|spend|charge|fee|interest|tax|cash advance|addition|emi/.test(l)) return "debit";
+  return null;
+}
+
+/**
+ * An account summary laid out as a grid: headings wrapped over several lines
+ * above a single row of figures, e.g. SBI's "Previous Balance", "Payments,
+ * Reversals & other Credits", "Purchases & Other Debits", "Fee, Taxes &
+ * Interest Charges", "Total Outstanding" over "0.18 CR 0.00 910.82 0.00 911.00".
+ * Each heading piece is matched to the figure it sits above, every column has
+ * to be recognised, and the result is only trusted if
+ * previous balance - credits + debits comes to the total.
+ */
+function gridSummary(layout: LayoutRow[] | undefined): Partial<StatementSummary> | null {
+  if (!layout?.length) return null;
+  const money = /^((?:\d{1,3}(?:,\d{2,3})*|\d+)\.\d{2})(?:\s*(Cr|Dr)\b)?$/i;
+  for (let i = 0; i < layout.length; i++) {
+    const figures = layout[i].cells.map((c) => ({ cell: c, m: c.text.trim().match(money) })).filter((f) => f.m);
+    if (figures.length < 4 || figures.length !== layout[i].cells.length) continue;
+    const centre = (c: { x0: number; x1: number }) => (c.x0 + c.x1) / 2;
+    const labels = figures.map(() => [] as string[]);
+    for (let j = i - 1; j >= 0 && j >= i - 7; j--) {
+      if (layout[j].page !== layout[i].page) break;
+      if (layout[j].cells.some((c) => CELL_MONEY.test(c.text))) break;
+      for (const cell of layout[j].cells) {
+        if (!/[A-Za-z]{3,}/.test(cell.text)) continue;
+        let nearest = -1;
+        let gap = Infinity;
+        figures.forEach((f, k) => {
+          const d = Math.abs(centre(f.cell) - centre(cell));
+          if (d < gap) { gap = d; nearest = k; }
+        });
+        if (nearest !== -1 && gap < 60) labels[nearest].unshift(cell.text);
+      }
+    }
+    const roles = labels.map((parts) => gridRole(parts.join(" ")));
+    if (roles.some((r) => r === null) || roles.filter((r) => r === "total").length !== 1) continue;
+    const values = figures.map((f) => {
+      const v = parseAmount(f.m![1]);
+      return f.m![2]?.toLowerCase() === "cr" ? -v : v;
+    });
+    let previous = 0;
+    let credits = 0;
+    let debits = 0;
+    let total = 0;
+    roles.forEach((role, k) => {
+      if (role === "previous") previous = values[k];
+      else if (role === "credit") credits += Math.abs(values[k]);
+      else if (role === "debit") debits += Math.abs(values[k]);
+      else total = values[k];
+    });
+    // Banks round the total to the rupee, so allow a little slack.
+    if (Math.abs(previous - credits + debits - total) > Math.max(1, Math.abs(total) * 0.005)) continue;
+    const round = (n: number) => Math.round(n * 100) / 100;
+    return {
+      previousBalance: roles.includes("previous") ? round(previous) : undefined,
+      statedCredits: round(credits),
+      statedDebits: round(debits),
+      totalDue: round(total),
+    };
+  }
+  return null;
 }
 
 /** Figures printed under a heading that names a limit: credit, available or cash. */

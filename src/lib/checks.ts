@@ -77,7 +77,15 @@ export function runChecks(parsed: ParsedStatement, priors: PriorStatementInfo[],
     const sumText = `Previous balance ${inr(prev)} − credits ${inr(sc)} + spends ${inr(sd)} = ${inr(expected)}`;
     checks.push(
       Math.abs(expected - due) < 1
-        ? { id: "balance", label: "Balance adds up", status: "pass", detail: `${sumText}, the total due printed.` }
+        ? {
+            id: "balance",
+            label: "Balance adds up",
+            status: "pass",
+            detail:
+              Math.abs(expected - due) < 0.01
+                ? `${sumText}, the total due printed.`
+                : `${sumText}, which matches the ${inr(due)} printed once rounded to the rupee.`,
+          }
         : { id: "balance", label: "Balance adds up", status: "fail", detail: `${sumText}, but the statement says ${inr(due)} is due. A summary figure was misread.` }
     );
   }

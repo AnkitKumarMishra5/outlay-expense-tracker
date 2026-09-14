@@ -16,7 +16,6 @@ import { getJson } from "@/lib/api";
 interface Row {
   id: string;
   txn_date: string;
-  txn_time: string | null;
   description: string;
   amount: number;
   type: string;
@@ -302,6 +301,7 @@ export default function TransactionsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
+                <th className="w-6 py-2 pr-2 text-right text-[10px] font-medium">#</th>
                 <th className="py-2 pr-4 font-medium" aria-sort={order === "desc" ? "descending" : "ascending"}>
                   <button
                     type="button"
@@ -336,9 +336,9 @@ export default function TransactionsPage() {
                   }`}
                   style={{ "--d": `${Math.min(i, 20) * 20}ms` } as React.CSSProperties}
                 >
+                  <td className="py-2 pr-2 text-right text-[10px] text-muted tabular">{i + 1}</td>
                   <td className="whitespace-nowrap py-2 pr-4 text-ink2 tabular">
                     {r.txn_date}
-                    {r.txn_time && <span className="block text-[11px] leading-tight text-muted">{r.txn_time}</span>}
                   </td>
                   <td className="max-w-[12rem] truncate py-2 pr-4 sm:max-w-[24rem]" title={r.description}>
                     <Link href={`/statements/${r.statement_id}?txn=${r.id}`} className="hover:underline">
