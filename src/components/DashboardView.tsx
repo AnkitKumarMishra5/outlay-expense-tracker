@@ -138,10 +138,17 @@ export default function DashboardView({
       value: Math.abs(carried),
       fmt: money,
       tone: carried > 0 ? ("bad" as const) : carried < 0 ? ("good" as const) : ("quiet" as const),
-      detail: carried > 0 ? "unpaid from last cycle" : carried < 0 ? "in credit from last cycle" : undefined,
+      detail:
+        carried > 0
+          ? month ? "unpaid from last cycle" : "unpaid from before these statements"
+          : carried < 0
+            ? month ? "in credit from last cycle" : "in credit from before these statements"
+            : undefined,
       detailTone: carried > 0 ? ("bad" as const) : carried < 0 ? ("good" as const) : undefined,
       hint:
-        carried > 0
+        !month && carried !== 0
+          ? "Across all statements, what the cards already owed or held in credit before the first of them, less what was paid against it."
+          : carried > 0
           ? "Part of last cycle's bill was not cleared, so it has rolled into this one and is being billed again."
           : carried < 0
             ? "Last cycle was overpaid or ended in credit, and that credit comes off this bill."
@@ -290,7 +297,7 @@ export default function DashboardView({
                 </Link>
               </span>
             </div>
-            <LargestCharges rows={data.biggest ?? []} billed={billedSpend} />
+            <LargestCharges rows={data.biggest ?? []} billed={billedSpend} allTime={!month} />
           </div>
 
           <div className="card rise min-w-0 p-5" style={{ "--d": "400ms" } as React.CSSProperties}>

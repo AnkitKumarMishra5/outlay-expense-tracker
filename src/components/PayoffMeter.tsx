@@ -8,6 +8,7 @@ const C = 2 * Math.PI * R;
 
 /** Where this cycle's bills stand. */
 export default function PayoffMeter({
+  period = "this cycle",
   bills,
   settled,
   billed,
@@ -15,6 +16,8 @@ export default function PayoffMeter({
 }: {
   /** One entry per bill in the cycle, flagged if it is past its date. */
   bills: { id: string; overdue: boolean }[];
+  /** How the bills are scoped in words: "this cycle", or "across all statements". */
+  period?: string;
   /** Money on bills marked settled in this cycle. */
   settled: number;
   billed: number;
@@ -73,7 +76,7 @@ export default function PayoffMeter({
           <>
             <p className="payoff-headline text-good">Every bill settled</p>
             <p className="payoff-sub">
-              <span className="tabular">{inr(billed)}</span> across {total} bill{total === 1 ? "" : "s"} this cycle
+              <span className="tabular">{inr(billed)}</span> across {total} bill{total === 1 ? "" : "s"} {period}
             </p>
           </>
         ) : (

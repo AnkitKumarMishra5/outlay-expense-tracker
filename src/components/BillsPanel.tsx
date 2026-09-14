@@ -68,6 +68,8 @@ export default function BillsPanel({
 
   const { current, open, settled: currentSettled, overdue, cleared, billed } =
     billCycle(bills as CycleBill[], now, month ?? undefined);
+  // All time is every statement, not a cycle, and says so.
+  const period = month ? "this cycle" : "across all statements";
 
   // Nothing left to pay, and there was something to pay in the first place.
   const allClear = open.length === 0 && current.length > 0 && !held;
@@ -158,7 +160,7 @@ export default function BillsPanel({
             <span className="tabular">{currentSettled.length}</span> of <span className="tabular">{current.length}</span>{" "}
             settled
           </span>{" "}
-          this cycle
+          {period}
         </p>
         {currentSettled.length > 0 && (
           <button
@@ -178,6 +180,7 @@ export default function BillsPanel({
             bills={current.map((b) => ({ id: b.id, overdue: !b.settled && b.day < now }))}
             settled={clearedTotal}
             billed={billed}
+            period={period}
             remaining={open.length}
           />
         </div>
@@ -274,7 +277,7 @@ export default function BillsPanel({
           </p>
           <p className="allclear-sub">
             <span className="tabular">{inr(clearedTotal)}</span> cleared
-            {current.length === 1 ? "" : ` across ${current.length} bills`} this cycle.
+            {current.length === 1 ? "" : ` across ${current.length} bills`}{month ? " this cycle" : ""}.
             {elsewhere.length === 0 ? (
               activeId ? " Nothing outstanding on this card." : " No card has anything outstanding."
             ) : (
@@ -295,7 +298,7 @@ export default function BillsPanel({
       )}
 
       {queue.length === 0 && !allClear && (
-        <p className="mt-2 text-xs text-muted">{showSettled ? "Nothing settled this cycle yet." : "Nothing outstanding."}</p>
+        <p className="mt-2 text-xs text-muted">{showSettled ? `Nothing settled ${period} yet.` : "Nothing outstanding."}</p>
       )}
     </div>
   );

@@ -44,14 +44,14 @@ function statementMonth(b: Bill) {
   return monthIndex(new Date(due).toISOString().slice(0, 10));
 }
 
-/** Each card's bill for a statement month, or its latest bill when no month is picked. */
+/** Each card's bills for a statement month, or every statement it has when no month is picked, added together. */
 export function billsByCard(dues: Bill[], month: string | null) {
   const out: Record<string, { amount: number | null; settled: boolean; txns: number | null }> = {};
   for (const d of [...dues].sort((a, b) => a.day.localeCompare(b.day))) {
     if (month && billMonth(d) !== month) continue;
-    const prior = month ? out[d.card_id] : undefined;
+    const prior = out[d.card_id];
     out[d.card_id] = {
-      amount: d.amount != null ? Number(d.amount) : (prior?.amount ?? null),
+      amount: d.amount != null ? (prior?.amount ?? 0) + Number(d.amount) : (prior?.amount ?? null),
       settled: Boolean(d.settled) && (prior?.settled ?? true),
       txns: d.txn_count != null ? (prior?.txns ?? 0) + Number(d.txn_count) : (prior?.txns ?? null),
     };
@@ -92,14 +92,8 @@ export function billCycle(bills: Bill[], now = today(), month?: string): BillCyc
     const want = monthIndex(`${month}-01`);
     current = sorted.filter((b) => statementMonth(b) === want);
   } else {
-    const thisMonth = monthIndex(now);
-    const live = new Map<string, Bill>();
-    for (const b of sorted) {
-      if (thisMonth - statementMonth(b) <= 1) live.set(b.card_id, b);
-    }
-    const cycle = [...live.values()];
-    const cycleIds = new Set(cycle.map((b) => b.id));
-    current = [...cycle, ...sorted.filter((b) => !b.settled && !cycleIds.has(b.id))];
+    // All time is every statement, a card with several of them counted in full.
+    current = sorted;
   }
 
   const open = current.filter((b) => !b.settled);

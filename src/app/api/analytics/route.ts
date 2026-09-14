@@ -107,7 +107,9 @@ export async function GET(req: NextRequest) {
          FROM statements s
          WHERE s.card_id = cards.id AND s.user_id = cards.user_id
            AND s.paid_at IS NULL AND COALESCE(s.total_due, 0) > 0
-         ORDER BY s.due_date
+         -- The newest unpaid bill: its total already carries anything left on
+         -- an older one, so that is what the card owes.
+         ORDER BY s.due_date DESC
          LIMIT 1
        ) nd ON true
        WHERE cards.user_id = $${ownerPos}${cardFilter}

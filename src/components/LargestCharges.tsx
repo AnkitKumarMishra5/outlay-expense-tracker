@@ -9,7 +9,7 @@ import type { Analytics } from "@/lib/types";
 type Row = Analytics["biggest"][number];
 
 /** This period's charges, largest first. */
-export default function LargestCharges({ rows, billed }: { rows: Row[]; billed: number }) {
+export default function LargestCharges({ rows, billed, allTime = false }: { rows: Row[]; billed: number; allTime?: boolean }) {
   const tokens = useChartTokens();
   if (!rows.length) return <p className="py-6 text-center text-xs text-muted">No charges in this period.</p>;
 
@@ -63,8 +63,9 @@ export default function LargestCharges({ rows, billed }: { rows: Row[]; billed: 
         These {rows.length} charges come to <span className="tabular text-ink2">{inr(total)}</span>
         {billed > 0 && (
           <>
-            , which is <span className="text-ink2">{Math.round((total / billed) * 100)}%</span> of this cycle&apos;s{" "}
-            <span className="tabular text-ink2">{inr(billed)}</span> spends
+            , which is <span className="text-ink2">{Math.round((total / billed) * 100)}%</span> of{" "}
+            {allTime ? "the " : "this cycle's "}
+            <span className="tabular text-ink2">{inr(billed)}</span> {allTime ? "spent across all statements" : "spends"}
           </>
         )}
         .
