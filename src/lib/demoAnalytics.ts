@@ -180,6 +180,7 @@ export function demoAnalytics(range: Range, cardIndex: number | null, month?: st
       card_id: DEMO_CARDS.find((c) => c.card_label === d.cardLabel)?.id ?? d.cardLabel,
       day: d.day,
       statement_date: d.statementDate,
+      statement_month: d.statementDate.slice(0, 7),
       amount: d.amount,
       min_due: d.minDue,
       // The demo's statements carry no previous balance, so the bill is

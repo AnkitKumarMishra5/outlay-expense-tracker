@@ -2,6 +2,28 @@ import { Analytics } from "./types";
 
 export type Bill = Analytics["dues"][number];
 
+/** Banks usually set the due date 18 to 22 days after the statement is made. */
+export const DUE_AFTER_CLOSE_DAYS = 20;
+
+/**
+ * The month a statement belongs to, saved with it so every screen agrees: the
+ * printed statement date, then the end of the billing period. With neither
+ * printed, the statement is taken to have closed twenty days before its due
+ * date, and never before the last charge on it.
+ */
+export function statementMonthFor(
+  s: { statementDate?: string | null; periodEnd?: string | null; dueDate?: string | null; lastTxnDate?: string | null },
+  fallback: string
+): string {
+  if (s.statementDate) return s.statementDate.slice(0, 7);
+  if (s.periodEnd) return s.periodEnd.slice(0, 7);
+  if (s.dueDate) {
+    const estimate = new Date(Date.parse(`${s.dueDate}T00:00:00Z`) - DUE_AFTER_CLOSE_DAYS * 86_400_000).toISOString().slice(0, 10);
+    return (s.lastTxnDate && s.lastTxnDate > estimate ? s.lastTxnDate : estimate).slice(0, 7);
+  }
+  return (s.lastTxnDate ?? fallback).slice(0, 7);
+}
+
 export function today() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -16,8 +38,9 @@ function monthIndex(day: string) {
 // straddles two calendar months. Older than last month means a statement is
 // missing, not settled.
 function statementMonth(b: Bill) {
+  if (b.statement_month) return monthIndex(`${b.statement_month}-01`);
   if (b.statement_date) return monthIndex(b.statement_date);
-  const due = Date.parse(`${b.day}T00:00:00`) - 18 * 86_400_000;
+  const due = Date.parse(`${b.day}T00:00:00`) - DUE_AFTER_CLOSE_DAYS * 86_400_000;
   return monthIndex(new Date(due).toISOString().slice(0, 10));
 }
 
@@ -38,8 +61,9 @@ export function billsByCard(dues: Bill[], month: string | null) {
 
 /** The month a statement belongs to: the month it was generated in. */
 export function billMonth(b: Bill): string {
+  if (b.statement_month) return b.statement_month;
   if (b.statement_date) return b.statement_date.slice(0, 7);
-  const due = Date.parse(`${b.day}T00:00:00`) - 18 * 86_400_000;
+  const due = Date.parse(`${b.day}T00:00:00`) - DUE_AFTER_CLOSE_DAYS * 86_400_000;
   return new Date(due).toISOString().slice(0, 7);
 }
 

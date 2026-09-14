@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   // statement dated 12 August bills a cycle that opened on 13 July.
   const IN_MONTH = (pos: number) =>
     `statement_id IN (SELECT id FROM statements WHERE user_id = $1
-       AND substr(COALESCE(statement_date, period_end, due_date), 1, 7) = $${pos})`;
+       AND statement_month = $${pos})`;
 
   const args: string[] = [userId];
   const where = ["user_id = $1"];
@@ -124,7 +124,7 @@ export async function GET(req: NextRequest) {
       joinArgs
     ),
     c.execute(
-      `SELECT s.id, s.card_id, s.due_date AS day, s.statement_date, s.total_due AS amount, s.min_due AS min_due, s.paid_at,
+      `SELECT s.id, s.card_id, s.due_date AS day, s.statement_date, s.statement_month, s.total_due AS amount, s.min_due AS min_due, s.paid_at,
          s.total_debits, s.txn_count,
          (s.paid_at IS NOT NULL OR COALESCE(s.total_due, 0) <= 0) AS settled,
          cards.card_label, cards.bank_id, cards.last4_enc
@@ -136,8 +136,8 @@ export async function GET(req: NextRequest) {
     c.execute(
       `SELECT DISTINCT substr(txn_date,1,7) AS month FROM transactions WHERE user_id = $1
        UNION
-       SELECT DISTINCT substr(COALESCE(statement_date, period_end, due_date),1,7) AS month
-         FROM statements WHERE user_id = $1 AND COALESCE(statement_date, period_end, due_date) IS NOT NULL
+       SELECT DISTINCT statement_month AS month
+         FROM statements WHERE user_id = $1 AND statement_month IS NOT NULL
        ORDER BY month DESC`,
       [userId]
     ),

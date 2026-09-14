@@ -17,7 +17,7 @@ const LEADING_NOISE_RE = /^(.{0,10}?)(\d{2})[\/\-.](\d{2})[\/\-.](\d{2,4})\b/;
  * "19Jul 2026", "22 Jul 2026", "24 Aug 26", "24-Aug-26". HDFC runs the day into
  * the month name, SBI prints a two-digit year. A figure like "50.00" is never a year.
  */
-const NAMED_DATE_RE = /^(\d{1,2})[\s-]?([A-Za-z]{3,9})\.?,?[\s\-']+(\d{4}|\d{2})\b(?![.,]\d)/;
+const NAMED_DATE_RE = /^(\d{1,2})[\s-]?([A-Za-z]{3,9})\.?,?[\s\-'\u2019]+(\d{4}|\d{2})\b(?![.,]\d)/;
 
 /** "Aug 24, 2026", month first. */
 const MONTH_FIRST_ROW_RE = /^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4}|\d{2})\b(?![.,]\d)/;
@@ -45,8 +45,11 @@ function rowStart(line: string): { rest: string; date: string | null } | null {
   if (/[A-Za-z]{3,}/.test(prefix)) return null;
   return { rest: line.slice(loose[0].length).trim(), date: toISO(loose[2], loose[3], loose[4]) };
 }
-/** An amount and its marker: "Cr"/"Dr", or SBI's bare "C"/"D", never the start of a word. */
-const MONEY_RE = /((?:\d{1,3}(?:,\d{2,3})*|\d+)\.\d{2})\s*(Cr|CR|cr|Dr|DR|C|D)?(?![A-Za-z])\.?/g;
+/**
+ * An amount and its marker: "Cr"/"Dr", Axis's "Credit"/"Debit" written out, or
+ * SBI's bare "C"/"D". A marker is a whole word, never the start of one.
+ */
+const MONEY_RE = /((?:\d{1,3}(?:,\d{2,3})*|\d+)\.\d{2})\s*(credit|debit|cr|dr|c|d)?(?![A-Za-z])\.?/gi;
 
 function lastAmount(rest: string) {
   MONEY_RE.lastIndex = 0;
@@ -120,8 +123,8 @@ export function heuristicParse(text: string, layout?: LayoutRow[], rules: Catego
     const amount = parseAmount(am[1]);
     if (!Number.isFinite(amount) || amount <= 0) continue;
     const marker = am[2]?.toLowerCase();
-    const credit = marker === "cr" || marker === "c";
-    const debit = marker === "dr" || marker === "d";
+    const credit = marker?.startsWith("c") ?? false;
+    const debit = marker?.startsWith("d") ?? false;
     const type = credit || (!debit && CREDIT_RE.test(description)) ? "credit" : "debit";
     transactions.push({
       date,
@@ -153,8 +156,8 @@ const MONTHS: Record<string, string> = {
   jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
 };
 
-/** "12 Sep 2026", and SBI's "13 Aug 26". Never the start of a figure like "26.00". */
-const TEXT_DATE = String.raw`(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{4}|\d{2})(?![\d.,])`;
+/** "12 Sep 2026", SBI's "13 Aug 26" and Axis's "03 Oct '26". Never the start of a figure like "26.00". */
+const TEXT_DATE = String.raw`(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+['\u2019]?(\d{4}|\d{2})(?![\d.,])`;
 /** What issuers call the day a statement was made: Axis prints "Statement Generation Date". */
 const STATEMENT_DATE_LABEL = String.raw`statement (?:generation |issue )?date|date of statement|bill(?:ing)? date|statement generated on`;
 /** A heading that names exactly the credits column, never "Credit Limit" or "Payment Due Date". */
@@ -417,6 +420,12 @@ export function extractSummary(text: string, layout?: LayoutRow[]): StatementSum
   summary.statedCredits = alignedAmount(layout, CREDITS_HEADING) ?? summary.statedCredits;
   summary.dueDate = alignedDate(layout, /^(?:payment )?due date$/i) ?? summary.dueDate;
   summary.statementDate = alignedDate(layout, new RegExp(`^(?:${STATEMENT_DATE_LABEL})$`, "i")) ?? summary.statementDate;
+  // "Opening Balance ₹ -804.00" or "0.18 CR": a minus or a Cr means the card was in credit.
+  const openingCell = layout?.length
+    ? alignedCell(layout, /^(?:opening|previous) balance$/i, (t) => CELL_MONEY.test(t))
+    : undefined;
+  const opening = openingCell?.match(/(-)?\s*((?:\d{1,3}(?:,\d{2,3})*|\d+)\.\d{2})(?:\s*(Cr)\b)?/i);
+  if (opening) summary.previousBalance = opening[1] || opening[3] ? -parseAmount(opening[2]) : parseAmount(opening[2]);
 
   // A period set in a grid, its two dates in the cell under the heading.
   const periodCell = layout?.length

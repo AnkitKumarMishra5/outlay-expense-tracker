@@ -23,6 +23,7 @@ interface Row {
   due_date: string | null;
   total_due: number | null;
   statement_date: string | null;
+  statement_month: string | null;
   paid_at: string | null;
   total_debits: number;
   total_credits: number;
@@ -33,7 +34,7 @@ interface Row {
 
 /** A statement belongs to the month it was generated in. */
 const dateOf = (s: Row) => s.statement_date ?? s.period_end ?? s.due_date ?? s.created_at.slice(0, 10);
-const monthOf = (s: Row) => dateOf(s).slice(0, 7);
+const monthOf = (s: Row) => s.statement_month ?? dateOf(s).slice(0, 7);
 
 export default function Statements() {
   const [rows, setRows] = useState<Row[] | null>(null);

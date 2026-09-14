@@ -146,6 +146,14 @@ export default function BillsPanel({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h2 className="text-sm font-medium text-ink2">Bills</h2>
         <p className="text-xs text-ink2">
+          {open.length > 0 && (
+            <>
+              <span className="text-warn">
+                <span className="tabular">{open.length}</span> due
+              </span>
+              {" · "}
+            </>
+          )}
           <span className={currentSettled.length ? "text-good" : ""}>
             <span className="tabular">{currentSettled.length}</span> of <span className="tabular">{current.length}</span>{" "}
             settled

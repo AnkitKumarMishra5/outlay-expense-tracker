@@ -71,8 +71,13 @@ export function runChecks(parsed: ParsedStatement, priors: PriorStatementInfo[],
   // The statement's own arithmetic. If the figures read off the summary do not
   // add up to the due it printed, one of them was misread, however well the
   // rows tally.
-  const { previousBalance: prev, statedDebits: sd, statedCredits: sc, totalDue: due } = summary;
-  if (prev !== undefined && sd !== undefined && sc !== undefined && due !== undefined) {
+  // When the statement prints no spends or credits totals, the rows themselves
+  // stand in, so a pass proves no transaction was dropped or misread.
+  const { previousBalance: prev, totalDue: due } = summary;
+  const fromRows = summary.statedDebits === undefined || summary.statedCredits === undefined;
+  const sd = summary.statedDebits ?? totalDebits;
+  const sc = summary.statedCredits ?? totalCredits;
+  if (prev !== undefined && due !== undefined) {
     const expected = Math.round((prev - sc + sd) * 100) / 100;
     const sumText = `Previous balance ${inr(prev)} − credits ${inr(sc)} + spends ${inr(sd)} = ${inr(expected)}`;
     checks.push(
@@ -86,7 +91,12 @@ export function runChecks(parsed: ParsedStatement, priors: PriorStatementInfo[],
                 ? `${sumText}, the total due printed.`
                 : `${sumText}, which matches the ${inr(due)} printed once rounded to the rupee.`,
           }
-        : { id: "balance", label: "Balance adds up", status: "fail", detail: `${sumText}, but the statement says ${inr(due)} is due. A summary figure was misread.` }
+        : {
+            id: "balance",
+            label: "Balance adds up",
+            status: "fail",
+            detail: `${sumText}, but the statement says ${inr(due)} is due. ${fromRows ? "A transaction may be missing or misread." : "A summary figure was misread."}`,
+          }
     );
   }
 

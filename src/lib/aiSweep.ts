@@ -65,7 +65,7 @@ export async function sweepAccount(userId: string, month: string | null = null):
        FROM transactions t JOIN cards ON cards.id = t.card_id
       WHERE t.user_id = $1 AND t.type = 'debit'
         ${month ? `AND t.statement_id IN (SELECT id FROM statements WHERE user_id = $1
-               AND substr(COALESCE(statement_date, period_end, due_date), 1, 7) = $2)` : ""}
+               AND statement_month = $2)` : ""}
       ORDER BY t.txn_date DESC`,
     month ? [userId, month] : [userId]
   );

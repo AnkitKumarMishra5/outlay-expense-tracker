@@ -82,7 +82,7 @@ export interface Analytics {
   fees?: { txn_date: string; description: string; amount: number; card_label: string }[];
   /** Every month the account holds data for, newest first. */
   months?: string[];
-  dues: { id: string; card_id: string; day: string; statement_date: string | null; amount: number | null; min_due: number | null; total_debits: number | null; txn_count: number | null; settled: boolean; paid_at: string | null; card_label: string; bank_id: string; last4: string | null }[];
+  dues: { id: string; card_id: string; day: string; statement_date: string | null; statement_month: string | null; amount: number | null; min_due: number | null; total_debits: number | null; txn_count: number | null; settled: boolean; paid_at: string | null; card_label: string; bank_id: string; last4: string | null }[];
 }
 
 /** The cross-month half of the dashboard, fetched separately so the rest of

@@ -123,6 +123,7 @@ export default function CardRail({
 
   /** Each bar is the card's share of spends across every card. */
   const totalSpend = cards.reduce((a, c) => a + (cardStats?.[c.id]?.debits ?? 0), 0);
+  const dueCount = cards.filter((c) => (cardStats?.[c.id]?.nextDueAmount ?? 0) > 0).length;
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -396,6 +397,14 @@ export default function CardRail({
             }`}
           >
             {option.label}
+            {option.value === "due" && dueCount > 0 && (
+              <span
+                className="ml-1.5 inline-block min-w-[16px] rounded-full bg-warn/15 px-1 text-[10px] font-semibold leading-4 text-warn tabular"
+                aria-label={`${dueCount} card${dueCount === 1 ? "" : "s"} with a bill due`}
+              >
+                {dueCount}
+              </span>
+            )}
           </button>
         ))}
       </div>

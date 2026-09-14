@@ -53,6 +53,7 @@ const SCHEMA = [
     stated_debits DOUBLE PRECISION,
     stated_credits DOUBLE PRECISION,
     previous_balance DOUBLE PRECISION,
+    statement_month TEXT,
     txn_count INTEGER NOT NULL DEFAULT 0,
     checks_json TEXT NOT NULL DEFAULT '[]',
     paid_at TEXT,
@@ -111,6 +112,20 @@ const MIGRATIONS = [
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS paid_at TEXT`,
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS previous_balance DOUBLE PRECISION`,
   `ALTER TABLE transactions DROP COLUMN IF EXISTS txn_time`,
+  // The month a statement belongs to, filled in for statements saved before it
+  // existed. Same rule as statementMonthFor in bills.ts.
+  `ALTER TABLE statements ADD COLUMN IF NOT EXISTS statement_month TEXT`,
+  `UPDATE statements s SET statement_month = substr(COALESCE(
+     s.statement_date,
+     s.period_end,
+     CASE WHEN length(s.due_date) = 10 THEN GREATEST(
+       to_char(s.due_date::date - 20, 'YYYY-MM-DD'),
+       COALESCE((SELECT MAX(t.txn_date) FROM transactions t WHERE t.statement_id = s.id), '')
+     ) END,
+     (SELECT MAX(t.txn_date) FROM transactions t WHERE t.statement_id = s.id),
+     s.created_at
+   ), 1, 7)
+   WHERE s.statement_month IS NULL`,
   // Credits replaced "Payments & Refunds". A credit is always Credits, and a
   // charge that was filed there belongs nowhere in particular until reviewed.
   `UPDATE transactions SET category = 'Other' WHERE type = 'debit' AND category IN ('Payments & Refunds', 'Credits')`,

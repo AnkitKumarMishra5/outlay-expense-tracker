@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
 
   const IN_MONTH = (pos: number) =>
     `statement_id IN (SELECT id FROM statements WHERE user_id = $1
-       AND substr(COALESCE(statement_date, period_end, due_date), 1, 7) = $${pos})`;
+       AND statement_month = $${pos})`;
 
   const dayArgs: string[] = [userId];
   const dayWhere = ["t.user_id = $1"];
@@ -47,11 +47,11 @@ export async function GET(req: NextRequest) {
       trendArgs
     ),
     c.execute(
-      `SELECT substr(COALESCE(s.statement_date, s.period_end, s.due_date), 1, 7) AS month,
+      `SELECT s.statement_month AS month,
          COALESCE(SUM(CASE WHEN t.type='debit' THEN t.amount END), 0) AS debits
        FROM transactions t JOIN statements s ON s.id = t.statement_id
        ${TW.replace("user_id", "t.user_id").replace("card_id", "t.card_id")}
-         AND COALESCE(s.statement_date, s.period_end, s.due_date) IS NOT NULL
+         AND s.statement_month IS NOT NULL
        GROUP BY month ORDER BY month`,
       trendArgs
     ),
@@ -62,12 +62,12 @@ export async function GET(req: NextRequest) {
       trendArgs
     ),
     c.execute(
-      `SELECT substr(COALESCE(s.statement_date, s.period_end, s.due_date), 1, 7) AS month,
+      `SELECT s.statement_month AS month,
          t.category, SUM(t.amount) AS debits
        FROM transactions t JOIN statements s ON s.id = t.statement_id
        ${TW.replace("user_id", "t.user_id").replace("card_id", "t.card_id")}
          AND t.type='debit' AND t.category != 'Credits'
-         AND COALESCE(s.statement_date, s.period_end, s.due_date) IS NOT NULL
+         AND s.statement_month IS NOT NULL
        GROUP BY month, t.category ORDER BY month`,
       trendArgs
     ),

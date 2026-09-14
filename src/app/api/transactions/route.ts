@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   if (month && /^\d{4}-\d{2}$/.test(month)) {
     add(
       `t.statement_id IN (SELECT id FROM statements WHERE user_id = $1
-         AND substr(COALESCE(statement_date, period_end, due_date), 1, 7) = $?)`,
+         AND statement_month = $?)`,
       month
     );
   }
@@ -70,9 +70,9 @@ export async function GET(req: NextRequest) {
       [...args, PAYMENT_PATTERN]
     ),
     c.execute(
-      `SELECT DISTINCT substr(COALESCE(statement_date, period_end, due_date), 1, 7) AS month
+      `SELECT DISTINCT statement_month AS month
          FROM statements
-        WHERE user_id = $1 AND COALESCE(statement_date, period_end, due_date) IS NOT NULL
+        WHERE user_id = $1 AND statement_month IS NOT NULL
         ORDER BY month DESC`,
       [userId]
     ),

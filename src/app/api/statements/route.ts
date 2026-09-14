@@ -3,6 +3,7 @@ import { db, now, uid } from "@/lib/db";
 import { ParsedTxn, Check, StatementSummary } from "@/lib/types";
 import { currentUserId, unauthorized } from "@/lib/auth";
 import { decryptOrNull } from "@/lib/crypto";
+import { statementMonthFor } from "@/lib/bills";
 
 export async function GET(req: NextRequest) {
   const userId = await currentUserId(req);
@@ -84,19 +85,23 @@ export async function POST(req: NextRequest) {
 
   const stmtId = uid();
   const ts = now();
+  const month = statementMonthFor(
+    { statementDate: s.statementDate, periodEnd: s.periodEnd, dueDate: s.dueDate, lastTxnDate: txns.map((t) => t.date).sort().at(-1) ?? null },
+    ts
+  );
   await c.tx(async (q) => {
     await q(
       `INSERT INTO statements (id, user_id, card_id, period_start, period_end, statement_date, due_date,
          total_due, min_due, total_debits, total_credits, stated_debits, stated_credits, previous_balance,
-         txn_count, checks_json, paid_at, filename, parser, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+         txn_count, checks_json, paid_at, filename, parser, created_at, statement_month)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`,
       [
         stmtId, userId, body.cardId, s.periodStart ?? null, s.periodEnd ?? null, s.statementDate ?? null,
         s.dueDate ?? null, s.totalDue ?? null, s.minDue ?? null, sum("debit"), sum("credit"),
         s.statedDebits ?? null, s.statedCredits ?? null, s.previousBalance ?? null,
         txns.length, JSON.stringify(body.checks ?? []), body.paid ? ts : null,
         String(body.filename ?? "").slice(0, 120),
-        "heuristic", ts,
+        "heuristic", ts, month,
       ]
     );
     for (const t of txns) {
