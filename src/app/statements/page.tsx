@@ -1,6 +1,7 @@
 "use client";
 
 import PaidToggle from "@/components/PaidToggle";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -36,7 +37,7 @@ const monthOf = (s: Row) => dateOf(s).slice(0, 7);
 
 export default function Statements() {
   const [rows, setRows] = useState<Row[] | null>(null);
-  const [removing, setRemoving] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Row | null>(null);
   /** The month picked, null for all of them, undefined until someone picks. */
   const [picked, setPicked] = useState<string | null | undefined>(undefined);
   const months = [...new Set((rows ?? []).map(monthOf))].sort().reverse();
@@ -56,19 +57,12 @@ export default function Statements() {
 
   // Deleting takes the statement's transactions with it, so it asks first and
   // says exactly what is going.
-  async function remove(s: Row) {
-    const what = `${s.card_label} · ${s.txn_count} transaction${s.txn_count === 1 ? "" : "s"}`;
-    if (!window.confirm(`Delete this statement?\n\n${what}\n\nIts transactions are deleted too. This cannot be undone.`))
-      return;
-    setRemoving(s.id);
+  async function remove(s: Row): Promise<string | void> {
     const res = await fetch(`/api/statements/${s.id}`, { method: "DELETE" }).catch(() => null);
-    setRemoving(null);
-    if (res?.ok) {
-      play("delete");
-      setRows((prev) => prev?.filter((r) => r.id !== s.id) ?? prev);
-    } else {
-      window.alert("That statement could not be deleted. Reload and try again.");
-    }
+    if (!res?.ok) return "That statement could not be deleted. Reload and try again.";
+    play("delete");
+    setPendingDelete(null);
+    setRows((prev) => prev?.filter((r) => r.id !== s.id) ?? prev);
   }
 
   if (!rows)
@@ -98,6 +92,24 @@ export default function Statements() {
 
   return (
     <div className="space-y-5">
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete this statement?"
+          confirmLabel="Delete statement"
+          busyLabel="Deleting…"
+          onConfirm={() => remove(pendingDelete)}
+          onCancel={() => setPendingDelete(null)}
+        >
+          <p>
+            {pendingDelete.card_label}
+            {pendingDelete.last4 && <span className="tabular"> •••• {pendingDelete.last4}</span>} ·{" "}
+            {pendingDelete.txn_count} transaction{pendingDelete.txn_count === 1 ? "" : "s"}
+          </p>
+          <p className="mt-2 text-xs text-warn">
+            Its transactions are deleted too. The PDF on your computer is untouched, so you can upload it again.
+          </p>
+        </ConfirmDialog>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold tracking-tight">Statements</h1>
         {months.length > 0 && <MonthPicker value={month} months={months} onChange={setPicked} />}
@@ -208,11 +220,10 @@ export default function Statements() {
                             type="button"
                             aria-label={`Delete the ${s.card_label} statement`}
                             title="Delete this statement"
-                            disabled={removing === s.id}
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              remove(s);
+                              setPendingDelete(s);
                             }}
                             className="rounded-lg border border-line p-1.5 text-muted transition-colors hover:border-bad/50 hover:text-bad disabled:opacity-40"
                           >

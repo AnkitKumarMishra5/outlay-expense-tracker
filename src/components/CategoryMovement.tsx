@@ -29,7 +29,7 @@ function Change({ now, before }: { now: number; before: number | null }) {
         {up ? "▲" : "▼"} {inr(Math.abs(diff))}
       </span>
       <span className="cat-row-pct text-muted">
-        {before === 0 ? "new" : `${Math.round((Math.abs(diff) / before) * 100)}%`}
+        {before === 0 ? "new" : `${up ? "+" : "\u2212"}${Math.round((Math.abs(diff) / before) * 100)}%`}
       </span>
     </>
   );
@@ -72,6 +72,11 @@ export default function CategoryMovement({ data, months: run }: { data: Category
   if (!rows.length) return <p className="py-10 text-center text-sm text-muted">No spend in these months.</p>;
 
   const latest = months[months.length - 1];
+  const monthSpend = rows.reduce((a, r) => a + r.now, 0);
+  const share = (amount: number) => {
+    const pct = (amount / monthSpend) * 100;
+    return pct > 0 && pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+  };
   const prev = months.length > 1 ? months[months.length - 2] : null;
 
   return (
@@ -114,7 +119,15 @@ export default function CategoryMovement({ data, months: run }: { data: Category
                 />
               ))}
             </span>
-            <span className="cat-row-amt tabular text-ink">{inr(r.now)}</span>
+            <span className="cat-row-amt tabular text-ink">
+              {inr(r.now)}
+              {monthSpend > 0 && r.now > 0 && (
+                <span className="cat-row-share">
+                  {share(r.now)}
+                  <span className="cat-row-share-word"> of spends</span>
+                </span>
+              )}
+            </span>
             <span className="cat-row-chg tabular">
               <Change now={r.now} before={r.before} />
             </span>

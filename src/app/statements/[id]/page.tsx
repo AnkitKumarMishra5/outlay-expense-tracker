@@ -1,5 +1,7 @@
 "use client";
 
+import ConfirmDialog from "@/components/ConfirmDialog";
+
 import Link from "next/link";
 import { play } from "@/lib/sound";
 import PaidToggle from "@/components/PaidToggle";
@@ -75,9 +77,11 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
     []
   );
 
-  async function remove() {
-    if (!confirm("Delete this statement and all its transactions?")) return;
-    await fetch(`/api/statements/${id}`, { method: "DELETE" });
+  const [confirming, setConfirming] = useState(false);
+
+  async function remove(): Promise<string | void> {
+    const res = await fetch(`/api/statements/${id}`, { method: "DELETE" }).catch(() => null);
+    if (!res?.ok) return "That statement could not be deleted. Reload and try again.";
     play("delete");
     toast.push("Statement deleted", { tone: "warn" });
     router.push("/statements");
@@ -122,9 +126,30 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
             card={{ bankId: data.statement.bank_id, label: data.statement.card_label, last4: data.statement.last4 }}
           />
         </span>
-        <button onClick={remove} className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink2 hover:border-bad hover:text-bad">
+        <button
+          onClick={() => setConfirming(true)}
+          className="rounded-lg border border-line px-3 py-1.5 text-sm text-ink2 hover:border-bad hover:text-bad"
+        >
           Delete
         </button>
+        {confirming && (
+          <ConfirmDialog
+            title="Delete this statement?"
+            confirmLabel="Delete statement"
+            busyLabel="Deleting…"
+            onConfirm={remove}
+            onCancel={() => setConfirming(false)}
+          >
+            <p>
+              {data.statement.card_label}
+              {data.statement.last4 && <span className="tabular"> •••• {data.statement.last4}</span>} ·{" "}
+              {data.transactions.length} transaction{data.transactions.length === 1 ? "" : "s"}
+            </p>
+            <p className="mt-2 text-xs text-warn">
+              Its transactions are deleted too. The PDF on your computer is untouched, so you can upload it again.
+            </p>
+          </ConfirmDialog>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

@@ -15,6 +15,10 @@ export default function LargestCharges({ rows, billed }: { rows: Row[]; billed: 
 
   const top = Number(rows[0].amount);
   const total = rows.reduce((a, r) => a + Number(r.amount), 0);
+  const share = (amount: number) => {
+    const pct = (amount / billed) * 100;
+    return pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+  };
 
   return (
     <div className="min-w-0">
@@ -42,7 +46,15 @@ export default function LargestCharges({ rows, billed }: { rows: Row[]; billed: 
                   aria-hidden
                 />
               </span>
-              <span className="big-amount tabular">{inr(amount)}</span>
+              <span className="big-amount tabular">
+                {inr(amount)}
+                {billed > 0 && (
+                  <span className="big-share">
+                    {share(amount)}
+                    <span className="big-share-word"> of spends</span>
+                  </span>
+                )}
+              </span>
             </li>
           );
         })}
@@ -51,8 +63,8 @@ export default function LargestCharges({ rows, billed }: { rows: Row[]; billed: 
         These {rows.length} charges come to <span className="tabular text-ink2">{inr(total)}</span>
         {billed > 0 && (
           <>
-            , which is <span className="text-ink2">{Math.round((total / billed) * 100)}%</span> of the{" "}
-            <span className="tabular text-ink2">{inr(billed)}</span> billed this cycle
+            , which is <span className="text-ink2">{Math.round((total / billed) * 100)}%</span> of this cycle&apos;s{" "}
+            <span className="tabular text-ink2">{inr(billed)}</span> spends
           </>
         )}
         .

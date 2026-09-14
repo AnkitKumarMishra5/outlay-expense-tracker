@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import AddCardForm from "@/components/AddCardForm";
 import CategoryRules from "@/components/CategoryRules";
 import BankBadge from "@/components/BankBadge";
+import ConfirmDelete from "@/components/ConfirmDelete";
 import { CardRow } from "@/lib/types";
 import { useToast } from "@/components/Toasts";
 import { getJson } from "@/lib/api";
@@ -19,6 +20,7 @@ export default function Settings() {
   const [showAdd, setShowAdd] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [cardQuery, setCardQuery] = useState("");
+  const [removingCard, setRemovingCard] = useState<CardRow | null>(null);
   const [account, setAccount] = useState<{ email: string | null } | null>(null);
   const [editingIdentity, setEditingIdentity] = useState(false);
   const [draftName, setDraftName] = useState("");
@@ -70,12 +72,6 @@ export default function Settings() {
   }
   useEffect(load, [loadCards]);
 
-  async function removeCard(id: string) {
-    if (!confirm("Remove this card? Its saved statements and transactions are deleted too.")) return;
-    await fetch(`/api/cards/${id}`, { method: "DELETE" });
-    toast.push("Card removed", { detail: "Its statements and transactions were deleted.", tone: "warn" });
-    load();
-  }
 
   async function wipe() {
     const res = await fetch("/api/reset", {
@@ -240,7 +236,18 @@ export default function Settings() {
               </div>
               <span className="ml-auto flex items-center gap-3">
                 <CardDigits cardId={c.id} last4={c.last4} first4={c.first4} onSaved={loadCards} />
-                <button onClick={() => removeCard(c.id)} className="text-xs text-muted hover:text-bad">
+                {removingCard?.id === c.id && (
+                  <ConfirmDelete
+                    card={c}
+                    onCancel={() => setRemovingCard(null)}
+                    onDeleted={() => {
+                      setRemovingCard(null);
+                      toast.push("Card removed", { detail: "Its statements and transactions were deleted.", tone: "warn" });
+                      load();
+                    }}
+                  />
+                )}
+                <button onClick={() => setRemovingCard(c)} className="text-xs text-muted hover:text-bad">
                   Remove
                 </button>
               </span>
