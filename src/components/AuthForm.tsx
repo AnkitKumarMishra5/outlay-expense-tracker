@@ -3,12 +3,16 @@
 import { useState } from "react";
 import { INVITE_MAILTO } from "@/lib/developer";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Logo from "./Logo";
 import { APP_BYLINE, APP_NAME } from "@/lib/developer";
 
+/** Where to land after signing in: a path on this site, never somewhere else. */
+function safeNext(next: string | null): string {
+  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/dashboard";
+}
+
 export default function AuthForm({ mode }: { mode: "login" | "register" }) {
-  const router = useRouter();
   const params = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,15 +33,17 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       body: JSON.stringify(isRegister ? { email, password, invite } : { email, password }),
     });
     const data = await res.json().catch(() => ({}));
-    setBusy(false);
     if (!res.ok) {
+      setBusy(false);
       setError(data.error ?? "Something went wrong.");
       setPassword("");
       setShake((n) => n + 1);
       return;
     }
-    router.replace(params.get("next") ?? "/dashboard");
-    router.refresh();
+    // A full load, not a router move. While signed out, the router cached the
+    // proxy's redirect for every page it prefetched, and a client navigation
+    // replays that and lands back here. A real request carries the new cookie.
+    window.location.replace(safeNext(params.get("next")));
   }
 
   const input =

@@ -14,40 +14,64 @@ Scope is narrow on purpose: credit card statements only. Not budgeting, not net 
 
 ## A look at it
 
-**The dashboard.** Pick a month and every card you hold lines up by what it billed that cycle, with the bills still outstanding, how the bill built up day by day, and where the money went.
+**The dashboard.** Pick a statement month and every card lines up by what it still owes, settled bills carry a stamp, and the headline figures show how the total due is made up.
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" width="900" alt="Dashboard: cards ranked by what they billed this cycle, five headline figures, a bills panel showing five of eight settled, how the bill built up and the category split">
+  <img src="docs/screenshots/dashboard.png" width="900" alt="Dashboard: twelve cards ranked by what is due this statement month with settled ones stamped, total due as spends less refunds plus anything carried over, a bills panel showing five of eight settled, how the bill built up and the category split">
+</p>
+
+**AI that shows its work.** Saving a batch sends only merchant names to the model, never amounts or card details, and every card in the batch is scanned in turn while the categories are refined.
+
+<p align="center">
+  <img src="docs/screenshots/ai-review.gif" width="720" alt="The AI review after an upload: a stack of the five cards in the batch cycling to the front, merchant names being read and the three stages of the review">
+</p>
+
+**What changed.** Each category with its last six months on its own scale, this month's spend and the move from last month.
+
+<p align="center">
+  <img src="docs/screenshots/changes.png" width="900" alt="What changed: one row per category with six months of bars, the September spend and the change from August in rupees and percent, rising in red and falling in green">
+</p>
+
+**Over time.** Billed spend by month, the subscriptions that repeat, and where the money went month by month. Pick a category to see it on its own scale.
+
+<p align="center">
+  <img src="docs/screenshots/trends.png" width="900" alt="Over time: a spend trend by statement month, thirteen recurring subscriptions with when each is next due, and a stacked chart of spend by category for every month">
+</p>
+
+**The calendar.** Daily spend and every bill due on one grid. Amber is due, green is settled, and a ring marks a date that is only partly settled.
+
+<p align="center">
+  <img src="docs/screenshots/calendar.png" width="900" alt="Calendar for September: spend shaded on the dates money went out with bank tags for the cards used, a part-settled bill badge on the 30th, and the highest spend date, dates with spend and average per spend date below">
 </p>
 
 **A statement, verified.** Twelve checks run before anything is saved, and the result is stored with the statement. Fees get flagged rather than buried. Every category is a dropdown, so a wrong guess takes one click to fix.
 
 <p align="center">
-  <img src="docs/screenshots/statement.png" width="900" alt="Statement detail: spend, credits, total due and due date, eight verification checks with an annual fee flagged as a warning, then the transaction list with a colour-coded category dropdown on every row">
+  <img src="docs/screenshots/statement.png" width="900" alt="Statement detail: spends, credits, total due and due date, eight verification checks all passed, then the transaction list with a colour-coded category dropdown on every row">
 </p>
 
-**The calendar.** Daily spend and every payment due on one grid, scoped to the statement cycle rather than the calendar month. Each day carries the cards it was spent on. Amber means a bill falls due, green means it is settled.
+**Every transaction, one page.** Filter by statement month, card, statement, category or text, and correct a category inline. Or have AI re-sort a statement month, or the whole history, and review every change before it lands.
 
 <p align="center">
-  <img src="docs/screenshots/calendar.png" width="900" alt="Calendar: spend heat per day with two-letter bank tags for the cards used, amber badges for bills due and green ticks for settled ones">
+  <img src="docs/screenshots/transactions.png" width="900" alt="Transactions page: a statement month picker, filters for spends or credits, card, statement and category, the AI recategorise button, and every transaction across every card with a line between dates">
 </p>
 
-**Every transaction, one page.** Filter by card, by statement, by category or by text, and correct a category inline. Or have AI re-sort a statement month, or the whole history, and review every change before it lands.
+**Statements.** Grouped by statement month, each one stamped settled or showing what is still due.
 
 <p align="center">
-  <img src="docs/screenshots/transactions.png" width="900" alt="Transactions page: filters for search, card, statement and category, an account-wide AI recategorise button, and a table of every transaction across every card">
-</p>
-
-**Statements.** What has been read, what it checked out at, and what is still to pay.
-
-<p align="center">
-  <img src="docs/screenshots/statements.png" width="900" alt="Statement list: every statement across every card with its settled status and check summary">
+  <img src="docs/screenshots/statements.png" width="900" alt="Statement list for September: eight statements with their amounts, a settled stamp on the ones paid and a due label on the rest">
 </p>
 
 **Upload.** A month of PDFs at once. Each one is unlocked, read and matched to a card before anything is written.
 
 <p align="center">
-  <img src="docs/screenshots/upload.png" width="900" alt="Upload screen: drop a month of password-protected statement PDFs at once">
+  <img src="docs/screenshots/upload.png" width="900" alt="Upload review: five statements read and matched to their cards, each with its amount due, a due date to confirm and the option to review categories with AI after saving">
+</p>
+
+**Settings.** The name and date of birth that unlock statements, any password patterns you teach it, and your cards, all encrypted.
+
+<p align="center">
+  <img src="docs/screenshots/settings.png" width="900" alt="Settings: the account, the statement identity with a masked date of birth, password patterns, and the list of cards with their stored passwords">
 </p>
 
 The landing page runs this whole dashboard on invented cards and invented spend, so you can try it before signing up.

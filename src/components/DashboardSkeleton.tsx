@@ -54,7 +54,7 @@ export default function DashboardSkeleton() {
               <div key={i} className="stat-cell">
                 <Block className="h-3 w-20 rounded" i={i} />
                 <Block className="mt-2 h-6 w-24 rounded" i={i} />
-                {i === 4 && <Block className="mt-1.5 h-2.5 w-28 rounded" i={i} />}
+                {(i === 1 || i === 4) && <Block className="mt-1.5 h-2.5 w-24 rounded" i={i} />}
               </div>
             ))}
           </div>

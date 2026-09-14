@@ -45,16 +45,17 @@ export async function GET(req: NextRequest) {
   const W = `WHERE ${where.join(" AND ")}`;
   const offset = Math.max(0, Number(p.get("offset") ?? 0) || 0);
   const limit = Math.min(1000, Math.max(1, Number(p.get("limit") ?? PAGE) || PAGE));
+  const dir = p.get("sort") === "asc" ? "ASC" : "DESC";
 
   const c = await db();
   const [rows, totals, statementMonths] = await Promise.all([
     c.execute(
-      `SELECT t.id, t.txn_date, t.description, t.amount, t.type, t.category, t.is_fee,
+      `SELECT t.id, t.txn_date, t.txn_time, t.description, t.amount, t.type, t.category, t.is_fee,
               t.is_international, t.statement_id,
               cards.id AS card_id, cards.card_label, cards.bank_id, cards.bank_name, cards.last4_enc
        FROM transactions t JOIN cards ON cards.id = t.card_id
        ${W}
-       ORDER BY t.txn_date DESC, t.created_at DESC
+       ORDER BY t.txn_date ${dir}, t.txn_time ${dir} NULLS LAST, t.created_at ${dir}
        LIMIT ${limit + 1} OFFSET ${offset}`,
       args
     ),

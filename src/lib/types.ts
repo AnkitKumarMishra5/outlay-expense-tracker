@@ -2,6 +2,8 @@ export type TxnType = "debit" | "credit";
 
 export interface ParsedTxn {
   date: string; // ISO yyyy-mm-dd
+  /** HH:MM, when the statement prints the time of the charge. */
+  time?: string;
   description: string;
   amount: number; // always positive
   type: TxnType;
@@ -19,6 +21,8 @@ export interface StatementSummary {
   minDue?: number;
   statedDebits?: number;
   statedCredits?: number;
+  /** The balance brought forward, when the statement prints its own arithmetic. */
+  previousBalance?: number;
 }
 
 export type CheckStatus = "pass" | "warn" | "fail";

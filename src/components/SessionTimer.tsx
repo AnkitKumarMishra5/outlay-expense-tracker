@@ -2,7 +2,6 @@
 
 import { play } from "@/lib/sound";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 
 const HEARTBEAT_THROTTLE_MS = 60_000;
 const WARN_MS = 120_000;
@@ -13,7 +12,6 @@ function readExpiry(): number | null {
 }
 
 export default function SessionTimer() {
-  const router = useRouter();
   const [remaining, setRemaining] = useState<number | null>(null);
   const lastBeat = useRef(0);
   const locking = useRef(false);
@@ -24,10 +22,10 @@ export default function SessionTimer() {
       locking.current = true;
       play("lock");
       await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
-      router.replace(reason === "expired" ? "/login?expired=1" : "/login");
-      router.refresh();
+      // A full load, so no signed-in page survives in the router's cache.
+      window.location.replace(reason === "expired" ? "/login?expired=1" : "/login");
     },
-    [router]
+    []
   );
 
   useEffect(() => {

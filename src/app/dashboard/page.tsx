@@ -7,7 +7,7 @@ import CreditCard from "@/components/CreditCard";
 import DashboardView from "@/components/DashboardView";
 import DashboardSkeleton from "@/components/DashboardSkeleton";
 import type { CardStat } from "@/components/CardRail";
-import { billMonth } from "@/lib/bills";
+import { billsByCard } from "@/lib/bills";
 import { monthKey, monthTitle, Range, RANGE_LABELS } from "@/lib/format";
 import { Analytics, CardRow, Timeline } from "@/lib/types";
 import { getJson } from "@/lib/api";
@@ -31,6 +31,7 @@ export default function Dashboard() {
   const [checked, setChecked] = useState(false);
   const [loadedKey, setLoadedKey] = useState("");
   const [railRows, setRailRows] = useState<Analytics["byCard"]>([]);
+  const [railDues, setRailDues] = useState<Analytics["dues"]>([]);
   const queryKey = `${month ?? range}|${cardId ?? "all"}`;
 
   const loadCards = useCallback(() => {
@@ -87,7 +88,10 @@ export default function Dashboard() {
   const loadRail = useCallback(() => {
     const q = new URLSearchParams(month ? { month } : { range });
     getJson<Analytics>(`/api/analytics?${q}`, onExpired).then((d) => {
-      if (d?.byCard) setRailRows(d.byCard);
+      if (d?.byCard) {
+        setRailRows(d.byCard);
+        setRailDues(d.dues ?? []);
+      }
     });
   }, [month, range, onExpired]);
   useEffect(() => {
@@ -99,24 +103,21 @@ export default function Dashboard() {
 
 
   const cardStats = useMemo(() => {
-    const billed = new Map<string, number>();
-    for (const d of data?.dues ?? []) {
-      if (d.txn_count == null) continue;
-      if (month && billMonth(d) !== month) continue;
-      billed.set(d.card_id, (billed.get(d.card_id) ?? 0) + Number(d.txn_count));
-    }
+    const bills = billsByCard(railDues, month);
     const map: Record<string, CardStat> = {};
     for (const row of railRows) {
+      const bill = bills[row.card_id];
       map[row.card_id] = {
         debits: Number(row.debits),
         txns: Number(row.txns ?? 0),
         nextDue: row.next_due ?? null,
         nextDueAmount: row.next_due_amount != null ? Number(row.next_due_amount) : null,
-        billedTxns: billed.get(row.card_id) ?? null,
+        billedTxns: bill?.txns ?? null,
+        bill: bill ? { amount: bill.amount, settled: bill.settled } : null,
       };
     }
     return map;
-  }, [railRows, data?.dues, month]);
+  }, [railRows, railDues, month]);
 
   if (!checked || !data) return <DashboardSkeleton />;
 

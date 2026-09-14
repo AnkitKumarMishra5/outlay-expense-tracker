@@ -5,6 +5,8 @@ import Link from "next/link";
 import { setCardholder } from "@/lib/cardholder";
 import { SAMPLE_IDENTITY } from "@/lib/passwords";
 import DashboardView from "@/components/DashboardView";
+import type { CardStat } from "@/components/CardRail";
+import { billsByCard } from "@/lib/bills";
 import FindingIllustrations from "@/components/FindingIllustrations";
 import { INVITE_MAILTO } from "@/lib/developer";
 import { DEMO_CARDS } from "@/lib/demo";
@@ -65,13 +67,17 @@ export default function Landing() {
   );
 
   const cardStats = useMemo(() => {
-    const map: Record<string, { debits: number; txns: number; nextDue: string | null; nextDueAmount: number | null }> = {};
-    for (const row of applyOverride(demoAnalytics("all", null, month)).byCard) {
+    const all = applyOverride(demoAnalytics("all", null, month));
+    const bills = billsByCard(all.dues, month);
+    const map: Record<string, CardStat> = {};
+    for (const row of all.byCard) {
+      const bill = bills[row.card_id];
       map[row.card_id] = {
         debits: row.debits,
         txns: row.txns,
         nextDue: row.next_due,
         nextDueAmount: row.next_due_amount,
+        bill: bill ? { amount: bill.amount, settled: bill.settled } : null,
       };
     }
     return map;

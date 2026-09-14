@@ -96,6 +96,11 @@ export function heuristicParse(text: string, layout?: LayoutRow[], rules: Catego
     if (!am) continue;
     const date = head.date;
     if (!date) continue;
+    // Some issuers print the time right after the date. It is kept, not
+    // thrown away with the rest of the description's leading noise.
+    const clock = rest.match(/^,?\s*(\d{1,2}):(\d{2})(?::\d{2})?\s+/);
+    const time =
+      clock && Number(clock[1]) < 24 && Number(clock[2]) < 60 ? `${clock[1].padStart(2, "0")}:${clock[2]}` : undefined;
     let description = cleanDescription(rest.slice(0, am.index));
     if (description.length < 3) {
       const above = (lines[i - 1] ?? "").trim();
@@ -110,6 +115,7 @@ export function heuristicParse(text: string, layout?: LayoutRow[], rules: Catego
     const type = marker === "cr" || (marker !== "dr" && CREDIT_RE.test(description)) ? "credit" : "debit";
     transactions.push({
       date,
+      time,
       description,
       amount,
       type,
@@ -139,6 +145,11 @@ const MONTHS: Record<string, string> = {
 };
 
 const TEXT_DATE = String.raw`(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})`;
+/** What issuers call the day a statement was made: Axis prints "Statement Generation Date". */
+const STATEMENT_DATE_LABEL = String.raw`statement (?:generation |issue )?date|date of statement|bill(?:ing)? date|statement generated on`;
+/** A heading that names exactly the credits column, never "Credit Limit" or "Payment Due Date". */
+const CREDITS_HEADING = /^(?:payments?|credits?)(?:\s*(?:&|and|\/)\s*(?:other\s+)?(?:credits?|payments?))?$/i;
+const DEBITS_HEADING = /^(?:purchases?|debits?|spends?)(?:\s*(?:&|and|\/)\s*(?:other\s+)?(?:debits?|charges?))?$/i;
 /** "August 30, 2026", which is how ICICI and a few others print it. */
 const MONTH_FIRST = String.raw`([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})`;
 
@@ -147,9 +158,9 @@ const MONTH_FIRST = String.raw`([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})`;
  * on different lines: "PAYMENT DUE DATE" sits in a header row and the date
  * three rows below it. Anything that only looks along one line misses those.
  */
-function nearLabel(text: string, labels: RegExp, lookahead = 6): string | null {
+function nearLabel(text: string, labels: RegExp, lookahead = 6, skip?: RegExp): string | null {
   const lines = text.split("\n");
-  const idx = lines.findIndex((l) => labels.test(l));
+  const idx = lines.findIndex((l) => labels.test(l) && !skip?.test(l));
   if (idx === -1) return null;
   return lines.slice(idx, idx + lookahead + 1).join("\n");
 }
@@ -168,6 +179,13 @@ function findTextDate(text: string, labels: RegExp): string | undefined {
 
 function amountsOn(line: string): number[] {
   return (line.match(/(?:\d{1,3}(?:,\d{2,3})*|\d+)\.\d{2}/g) ?? []).map(parseAmount);
+}
+
+/** The same figures, a "Cr" after one making it negative: a balance in the cardholder's favour. */
+function signedAmountsOn(line: string): number[] {
+  return [...line.matchAll(/((?:\d{1,3}(?:,\d{2,3})*|\d+)\.\d{2})(?:\s*(Cr|Dr)\b)?/gi)].map((m) =>
+    m[2]?.toLowerCase() === "cr" ? -parseAmount(m[1]) : parseAmount(m[1])
+  );
 }
 
 /** Same idea from the text alone, for pages with no usable geometry. */
@@ -310,12 +328,13 @@ function tableSummary(text: string): Partial<StatementSummary> {
 
 export function extractSummary(text: string, layout?: LayoutRow[]): StatementSummary {
   const summary: StatementSummary = {
-    statementDate: findDate(text, /statement date/),
+    statementDate: findDate(text, new RegExp(STATEMENT_DATE_LABEL)),
     dueDate: findDate(text, /payment due date|due date/),
     totalDue: findAmount(text, /total (?:amount|payment) due|total dues/),
     minDue: findAmount(text, /minimum (?:amount|payment) due|min(?:imum)? due/),
     statedDebits: findAmount(text, /total (?:debits?|purchases?(?: & other (?:debits|charges))?|spends)/),
-    statedCredits: findAmount(text, /total (?:credits?|payments?(?: & other credits)?)/),
+    // "Total Payment Due" starts the same way as "Total Payments", so a due is ruled out.
+    statedCredits: findAmount(text, /total (?:credits?|payments?(?: (?:&|and) other credits)?)(?!\s*(?:amount\s+)?due)/),
   };
   const period = text.match(
     /(?:statement period|period)[^0-9\n]{0,20}(\d{2})[\/\-.](\d{2})[\/\-.](\d{2,4})\s*(?:to|-|\u2013)\s*(\d{2})[\/\-.](\d{2})[\/\-.](\d{2,4})/i
@@ -333,13 +352,16 @@ export function extractSummary(text: string, layout?: LayoutRow[]): StatementSum
     summary.periodEnd ??= fromTextDate(textPeriod[4], textPeriod[5], textPeriod[6]);
   }
 
-  summary.statementDate ??= findTextDate(text, /statement date/);
+  summary.statementDate ??= findTextDate(text, new RegExp(STATEMENT_DATE_LABEL));
   summary.dueDate ??= findTextDate(text, /payment due date|due date/);
 
   // Grid layouts: look a few lines past the label as well as along it.
-  const nearStatement = nearLabel(text, /statement date/i);
+  const nearStatement = nearLabel(text, new RegExp(STATEMENT_DATE_LABEL, "i"));
   const nearDue = nearLabel(text, /payment due date/i);
-  const nearTotal = nearLabel(text, /total amount due|total payment due|total dues/i);
+  // "…=Total Payment Due" in a balance sentence names the due but is followed
+  // by every term's figure, the previous balance first. That sentence has its
+  // own reader, so this one looks for the label anywhere else.
+  const nearTotal = nearLabel(text, /total amount due|total payment due|total dues/i, 6, /=/);
   const nearMin = nearLabel(text, /minimum amount due|minimum payment due|min(?:imum)? due/i);
 
   const monthFirst = (block: string | null): string | undefined => {
@@ -370,18 +392,30 @@ export function extractSummary(text: string, layout?: LayoutRow[]): StatementSum
 
   summary.totalDue = columnValue(text, /total amount due|total payment due|total dues/i) ?? summary.totalDue;
   summary.minDue = columnValue(text, /minimum (?:amount |payment )?dues?$|^min(?:imum)? dues?$/i) ?? summary.minDue;
-  summary.statedDebits ??= columnValue(text, /^purchases?\b|purchases?\s*\/\s*charges?|^debits?\b|^spends?\b/i);
-  summary.statedCredits ??= columnValue(text, /^payments?\b|payments?\s*\/\s*credits?|^credits?\b/i);
+  summary.statedDebits ??= columnValue(text, DEBITS_HEADING);
+  summary.statedCredits ??= columnValue(text, CREDITS_HEADING);
 
   summary.totalDue = alignedAmount(layout, /total amount due|total payment due|total dues?$/i) ?? summary.totalDue;
+  const dueCell = layout?.length
+    ? alignedCell(layout, /total amount due|total payment due|total dues?$/i, (t) => CELL_MONEY.test(t))
+    : undefined;
+  if (dueCell && /\bCr\b/i.test(dueCell) && summary.totalDue !== undefined) summary.totalDue = -Math.abs(summary.totalDue);
   summary.minDue = alignedAmount(layout, /^min(?:imum)? (?:amount |payment )?dues?$/i) ?? summary.minDue;
-  summary.statedDebits =
-    alignedAmount(layout, /^purchases?\b|purchases?\s*\/\s*debits?|purchases?\s*\/\s*charges?|^debits?\b|^spends?\b/i) ??
-    summary.statedDebits;
-  summary.statedCredits =
-    alignedAmount(layout, /^payments?\b|payments?\s*\/\s*credits?|^credits?\b/i) ?? summary.statedCredits;
+  summary.statedDebits = alignedAmount(layout, DEBITS_HEADING) ?? summary.statedDebits;
+  summary.statedCredits = alignedAmount(layout, CREDITS_HEADING) ?? summary.statedCredits;
   summary.dueDate = alignedDate(layout, /^(?:payment )?due date$/i) ?? summary.dueDate;
-  summary.statementDate = alignedDate(layout, /^statement date$/i) ?? summary.statementDate;
+  summary.statementDate = alignedDate(layout, new RegExp(`^(?:${STATEMENT_DATE_LABEL})$`, "i")) ?? summary.statementDate;
+
+  // A period set in a grid, its two dates in the cell under the heading.
+  const periodCell = layout?.length
+    ? alignedCell(layout, /^(?:statement|billing) period$/i, (t) => PERIOD_NUMERIC.test(t) || new RegExp(`${TEXT_DATE}.*${TEXT_DATE}`).test(t))
+    : undefined;
+  if (periodCell) {
+    const n = periodCell.match(PERIOD_NUMERIC);
+    const t = periodCell.match(new RegExp(`${TEXT_DATE}\\s*(?:to|-|\u2013)\\s*${TEXT_DATE}`));
+    summary.periodStart ??= n ? toISO(n[1], n[2], n[3]) ?? undefined : t ? fromTextDate(t[1], t[2], t[3]) : undefined;
+    summary.periodEnd ??= n ? toISO(n[4], n[5], n[6]) ?? undefined : t ? fromTextDate(t[4], t[5], t[6]) : undefined;
+  }
 
   const table = tableSummary(text);
   summary.totalDue ??= table.totalDue;
@@ -390,7 +424,78 @@ export function extractSummary(text: string, layout?: LayoutRow[]): StatementSum
   summary.statedDebits ??= table.statedDebits;
   summary.statedCredits ??= table.statedCredits;
 
+  // The issuer's own arithmetic, when it prints it, outranks every guess above.
+  const sum = equationSummary(text);
+  if (sum.statedDebits !== undefined) summary.statedDebits = sum.statedDebits;
+  if (sum.statedCredits !== undefined) summary.statedCredits = sum.statedCredits;
+  if (sum.previousBalance !== undefined) summary.previousBalance = sum.previousBalance;
+  summary.totalDue ??= sum.totalDue;
+
+  // A credit limit is never a total. Any figure printed under a limit heading
+  // is struck from the stated totals, whichever reader picked it up.
+  const limits = limitFigures(text);
+  for (const key of ["statedDebits", "statedCredits", "totalDue"] as const) {
+    const v = summary[key];
+    if (v !== undefined && v !== 0 && limits.has(Math.abs(v))) summary[key] = undefined;
+  }
+
   return summary;
+}
+
+const PERIOD_NUMERIC = /(\d{2})[\/\-.](\d{2})[\/\-.](\d{2,4})\s*(?:to|-|\u2013)\s*(\d{2})[\/\-.](\d{2})[\/\-.](\d{2,4})/i;
+
+/**
+ * The balance sentence some issuers print, with its figures on the row under
+ * it, e.g. Axis: "Previous Balance - Payments - Credits + Purchase + Cash
+ * Advance + Other Debit&Charges =Total Payment Due" over seven amounts. Each
+ * figure takes the sign of the term above it: minus terms are credits, plus
+ * terms are debits, the one after = is the total due.
+ */
+function equationSummary(text: string): Partial<StatementSummary> {
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.includes("=") || amountsOn(line).length) continue;
+    const parts = line.split(/(\s+[-+]\s+|\s*=\s*)/);
+    const terms: { sign: string; label: string }[] = [];
+    for (let k = 0; k < parts.length; k += 2) {
+      const label = parts[k].trim();
+      if (label) terms.push({ sign: k === 0 ? "" : parts[k - 1].trim(), label });
+    }
+    if (terms.length < 4 || !terms.some((t) => t.sign === "=") || !terms.every((t) => /[a-z]/i.test(t.label))) continue;
+    for (const next of lines.slice(i + 1, i + 4)) {
+      // Balances carry a sign: "250.00 Cr" brought forward means the card was
+      // in credit, which is minus 250, not plus. The movement terms already
+      // take their sign from the sentence, so only their size matters.
+      const values = signedAmountsOn(next);
+      if (values.length !== terms.length) continue;
+      const out: Partial<StatementSummary> = {};
+      let credits = 0;
+      let debits = 0;
+      terms.forEach((t, n) => {
+        if (t.sign === "=") out.totalDue = values[n];
+        else if (t.sign === "-") credits += Math.abs(values[n]);
+        else if (t.sign === "+") debits += Math.abs(values[n]);
+        else if (/previous|opening|last statement/i.test(t.label)) out.previousBalance = values[n];
+      });
+      out.statedCredits = Math.round(credits * 100) / 100;
+      out.statedDebits = Math.round(debits * 100) / 100;
+      return out;
+    }
+  }
+  return {};
+}
+
+/** Figures printed under a heading that names a limit: credit, available or cash. */
+function limitFigures(text: string): Set<number> {
+  const lines = text.split("\n");
+  const out = new Set<number>();
+  lines.forEach((line, i) => {
+    if (!/\blimit\b/i.test(line) || amountsOn(line).length) return;
+    const next = lines.slice(i + 1, i + 5).find((l) => amountsOn(l).length);
+    for (const v of next ? amountsOn(next) : []) out.add(v);
+  });
+  return out;
 }
 
 export function redact(text: string): string {

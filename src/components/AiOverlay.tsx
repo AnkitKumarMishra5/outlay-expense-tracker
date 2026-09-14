@@ -28,28 +28,41 @@ export interface OverlayCard {
   last4?: string | null;
 }
 
+/** Cards shown stacked at once. The rest take their turn at the front. */
+const DECK_CAP = 3;
+
+const cardKey = (c: OverlayCard) => `${c.bankId}|${c.label}|${c.last4 ?? ""}`;
+
 /**
- * Full-screen "the model is working" panel. With a card it renders the card
- * under a scanning beam and streams the merchant names being read; without
- * one it falls back to the bot. Give it a `key` per run so the stages restart.
+ * Full-screen "the model is working" panel. With cards it renders them under a
+ * scanning beam and streams the merchant names being read: one card on its
+ * own, several as a stack whose front card changes in turn. Without any it
+ * falls back to the bot. Give it a `key` per run so the stages restart.
  */
 export default function AiOverlay({
   kicker,
   title,
   footnote,
-  card,
+  cards = [],
   merchants = [],
   stages = STAGES,
 }: {
   kicker: string;
   title: string;
   footnote: string;
-  card?: OverlayCard | null;
+  cards?: OverlayCard[];
   merchants?: string[];
   stages?: string[];
 }) {
   const [stage, setStage] = useState(0);
   const [cursor, setCursor] = useState(0);
+  const [front, setFront] = useState(0);
+
+  useEffect(() => {
+    if (cards.length < 2 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const id = setInterval(() => setFront((f) => (f + 1) % cards.length), 1600);
+    return () => clearInterval(id);
+  }, [cards.length]);
 
   useEffect(() => {
     const id = setInterval(() => setStage((s) => Math.min(s + 1, stages.length - 1)), 1800);
@@ -64,27 +77,55 @@ export default function AiOverlay({
 
   if (typeof document === "undefined") return null;
   const window3 = merchants.length ? [0, 1, 2].map((k) => merchants[(cursor + k) % merchants.length]) : [];
+  const stacked = cards.length > 1;
+  const order = cards.map((_, k) => cards[(front + k) % cards.length]);
+  const lead = order[0];
+  const behind = order.slice(1, DECK_CAP);
 
   return createPortal(
     <div className="ai-scrim" role="status" aria-live="polite">
-      <div className={`ai-panel ${card ? "ai-panel-wide" : ""}`}>
-        {card ? (
-          <div className="ai-scan" aria-hidden>
-            <div className="ai-scan-card">
-              <CreditCard bankId={card.bankId} label={card.label} last4={card.last4} />
-              <span className="ai-scan-grid" />
-              <span className="ai-scan-beam" />
-              <span className="ai-scan-corner tl" />
-              <span className="ai-scan-corner tr" />
-              <span className="ai-scan-corner bl" />
-              <span className="ai-scan-corner br" />
+      <div className={`ai-panel ${lead ? "ai-panel-wide" : ""}`}>
+        {lead ? (
+          <>
+            <div className={`ai-scan ${stacked ? "ai-scan-deck" : ""}`} aria-hidden>
+              {behind
+                .map((c, k) => ({ c, depth: k + 1 }))
+                .reverse()
+                .map(({ c, depth }) => (
+                  <div key={cardKey(c)} className="ai-deck-back" style={{ "--depth": depth } as React.CSSProperties}>
+                    <CreditCard bankId={c.bankId} label={c.label} last4={c.last4} />
+                  </div>
+                ))}
+              <div key={cardKey(lead)} className={stacked ? "ai-deck-front" : undefined}>
+                <div className="ai-scan-card">
+                  <CreditCard bankId={lead.bankId} label={lead.label} last4={lead.last4} />
+                  <span className="ai-scan-grid" />
+                  <span className="ai-scan-beam" />
+                  <span className="ai-scan-corner tl" />
+                  <span className="ai-scan-corner tr" />
+                  <span className="ai-scan-corner bl" />
+                  <span className="ai-scan-corner br" />
+                </div>
+              </div>
+              <div className="ai-scan-motes">
+                {Array.from({ length: 9 }, (_, i) => (
+                  <span key={i} style={{ "--i": i } as React.CSSProperties} />
+                ))}
+              </div>
             </div>
-            <div className="ai-scan-motes">
-              {Array.from({ length: 9 }, (_, i) => (
-                <span key={i} style={{ "--i": i } as React.CSSProperties} />
-              ))}
-            </div>
-          </div>
+            {stacked && (
+              <p className="ai-deck-caption">
+                <span className="truncate">
+                  {lead.label}
+                  {lead.last4 ? ` •••• ${lead.last4}` : ""}
+                </span>
+                <span className="text-muted tabular">
+                  {front + 1} of {cards.length}
+                </span>
+                {cards.length > DECK_CAP && <span className="ai-deck-more">+{cards.length - DECK_CAP} more</span>}
+              </p>
+            )}
+          </>
         ) : (
           <div className="ai-bot-stage" aria-hidden>
             <span className="ai-ring" />

@@ -5,7 +5,7 @@ import { ParsedTxn } from "./types";
 export async function revalidate(q: Query, userId: string, statementId: string) {
   const stmtRs = await q(
     `SELECT card_id, period_start, period_end, statement_date, due_date,
-            total_due, min_due, stated_debits, stated_credits, parser, paid_at
+            total_due, min_due, stated_debits, stated_credits, previous_balance, parser, paid_at
      FROM statements WHERE id = $1 AND user_id = $2`,
     [statementId, userId]
   );
@@ -33,13 +33,16 @@ export async function revalidate(q: Query, userId: string, statementId: string) 
   const credits = round(txns.filter((t) => t.type === "credit").reduce((a, t) => a + t.amount, 0));
 
   const priorRs = await q(
-    `SELECT period_start, period_end FROM statements
+    `SELECT period_start, period_end, statement_date, due_date, total_due FROM statements
      WHERE card_id = $1 AND user_id = $2 AND id <> $3`,
     [stmt.card_id, userId, statementId]
   );
   const priors: PriorStatementInfo[] = priorRs.rows.map((r) => ({
     periodStart: r.period_start as string | null,
     periodEnd: r.period_end as string | null,
+    statementDate: r.statement_date as string | null,
+    dueDate: r.due_date as string | null,
+    totalDue: r.total_due != null ? Number(r.total_due) : null,
   }));
 
   const checks = runChecks(
@@ -54,6 +57,7 @@ export async function revalidate(q: Query, userId: string, statementId: string) 
         minDue: stmt.min_due != null ? Number(stmt.min_due) : undefined,
         statedDebits: stmt.stated_debits != null ? Number(stmt.stated_debits) : undefined,
         statedCredits: stmt.stated_credits != null ? Number(stmt.stated_credits) : undefined,
+        previousBalance: stmt.previous_balance != null ? Number(stmt.previous_balance) : undefined,
       },
       transactions: txns,
     },

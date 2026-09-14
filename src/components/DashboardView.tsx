@@ -3,9 +3,9 @@
 import { memo, useMemo, useState } from "react";
 import Link from "next/link";
 import MonthPicker from "./MonthPicker";
-import { billCycle, today as billToday } from "@/lib/bills";
+import { billCycle, billMonth, today as billToday } from "@/lib/bills";
 
-import CardRail from "@/components/CardRail";
+import CardRail, { type CardStat } from "@/components/CardRail";
 import TrendChart from "@/components/charts/TrendChart";
 import CategoryTrend from "@/components/charts/CategoryTrend";
 import CategoryDonut from "@/components/charts/CategoryDonut";
@@ -16,15 +16,9 @@ import BillsPanel from "@/components/BillsPanel";
 import Subscriptions from "@/components/Subscriptions";
 import CycleBuildup from "@/components/charts/CycleBuildup";
 import CountUp from "@/components/CountUp";
-import { inr, monthTitle, shiftMonth } from "@/lib/format";
+import { inr, shiftMonth } from "@/lib/format";
 import { Analytics, CardRow, Timeline } from "@/lib/types";
 
-export interface CardStat {
-  debits: number;
-  txns: number;
-  nextDue: string | null;
-  nextDueAmount: number | null;
-}
 
 export default function DashboardView({
   title,
@@ -72,18 +66,21 @@ export default function DashboardView({
 
   // Statements, not the calendar: a statement dated 12 August bills a cycle
   // that opened in July, so its charges carry July dates.
+  // The statement month on screen and the five before it, oldest first.
+  const recentMonths = month ? [5, 4, 3, 2, 1, 0].map((back) => shiftMonth(month, -back)) : [];
   const billedSpend = cycle.current.reduce((a, b) => a + Number(b.total_debits ?? 0), 0);
   const totalDue = cycle.billed;
-  // What last cycle left behind. The previous balance and the payments
-  // against it cancel for anyone who paid in full, leaving the credits.
-  const carriedOver = totalDue - billedSpend;
-  // Banks round their own totals, so a balanced cycle can leave paise behind.
-  const settledUp = Math.abs(carriedOver) < 1;
-  const inCredit = carriedOver < 0;
-  // The credit rows themselves, less paying the card. The gap between due and
-  // spends also carries each bank's rounding, so it is only the fallback.
-  const refundRows =
-    data.totals.payments === undefined ? 0 : Number(data.totals.credits) - Number(data.totals.payments);
+  // The credit rows themselves, less paying the card: refunds, reversals, cashback.
+  const refunds =
+    data.totals.payments === undefined ? 0 : Math.max(0, Number(data.totals.credits) - Number(data.totals.payments));
+  // What last cycle left on these cards once it was paid: unpaid (positive) or
+  // in credit (negative). Derived so the strip always adds up, whichever of
+  // refunds and carry-over a cycle has, or both.
+  const carriedRaw = totalDue - billedSpend + refunds;
+  // Banks round each bill to whole rupees, which leaves paise here on a cycle
+  // that was otherwise paid in full.
+  const rounding = Math.abs(carriedRaw) < 1;
+  const carried = rounding ? 0 : carriedRaw;
 
   const fees = Number(data.totals.fees);
   const feeList =
@@ -104,6 +101,7 @@ export default function DashboardView({
     hint?: string;
     /** A quiet second line under the figure. */
     detail?: string;
+    detailTone?: "good" | "bad";
   }[] = [
     {
       label: "Total due",
@@ -120,27 +118,36 @@ export default function DashboardView({
       value: billedSpend,
       fmt: money,
       tone: "spend" as const,
-      op: !settledUp && inCredit ? "\u2212" : "+",
-      opLabel: !settledUp && inCredit ? "minus" : "plus",
-      hint: "Charges on the statements in this period, as each one reported them. A statement dated the 12th bills a cycle that began in the previous month, so this is not the same as spend by calendar date.",
+      op: "\u2212",
+      opLabel: "minus",
+      detail: fees > 0 ? `incl. ${money(fees)} fees` : "no fees",
+      detailTone: fees > 0 ? ("bad" as const) : undefined,
+      hint: `Charges on the statements in this period, fees included. A statement dated the 12th bills a cycle that began in the previous month, so this is not the same as spend by calendar date.\n\nFees and charges:\n${feeList}`,
     },
     {
-      label: settledUp ? "Carried over" : inCredit ? "Refunds & cashbacks" : "Unpaid carry-over",
-      value: settledUp ? 0 : inCredit && refundRows > 0.5 ? refundRows : Math.abs(carriedOver),
+      label: "Refunds & cashbacks",
+      value: refunds,
       fmt: money,
-      tone: settledUp ? ("quiet" as const) : inCredit ? ("good" as const) : ("bad" as const),
-      hint: settledUp
-        ? "Last cycle was cleared in full and these cards gave nothing back, so the bill is exactly what was charged."
-        : inCredit
-          ? "What the cards gave back rather than charged: refunds, reversals, cashback, and anything overpaid. It is the whole of what last cycle left behind once the previous balance and the payments against it cancelled out."
-          : "Part of last cycle's bill was not cleared, so it has rolled into this one and is being billed again.",
+      tone: refunds > 0 ? ("good" as const) : ("quiet" as const),
+      op: carried < 0 ? "\u2212" : "+",
+      opLabel: carried < 0 ? "minus" : "plus",
+      hint: "What the cards gave back rather than charged: refunds, reversals and cashback. Paying the card is not counted here.",
     },
     {
-      label: "Fees & charges",
-      value: fees,
+      label: "Carried over",
+      value: Math.abs(carried),
       fmt: money,
-      tone: fees > 0 ? ("bad" as const) : ("good" as const),
-      hint: feeList,
+      tone: carried > 0 ? ("bad" as const) : carried < 0 ? ("good" as const) : ("quiet" as const),
+      detail: carried > 0 ? "unpaid from last cycle" : carried < 0 ? "in credit from last cycle" : undefined,
+      detailTone: carried > 0 ? ("bad" as const) : carried < 0 ? ("good" as const) : undefined,
+      hint:
+        carried > 0
+          ? "Part of last cycle's bill was not cleared, so it has rolled into this one and is being billed again."
+          : carried < 0
+            ? "Last cycle was overpaid or ended in credit, and that credit comes off this bill."
+            : rounding && Math.abs(carriedRaw) >= 0.005
+              ? `Last cycle was cleared in full. The ${money(Math.abs(carriedRaw))} left over is each bank rounding its bill to whole rupees.`
+              : "Last cycle was cleared in full, so nothing rolled into this bill.",
     },
     {
       label: "Transactions",
@@ -153,7 +160,6 @@ export default function DashboardView({
           : undefined,
     },
   ];
-
 
   const statementsHref = demo ? "/register" : "/statements";
   const transactionsHref = demo ? "/register" : "/transactions";
@@ -203,7 +209,15 @@ export default function DashboardView({
                 >
                   <CountUp value={s.value} format={s.fmt} />
                 </p>
-                {s.detail && <p className="stat-cell-detail tabular">{s.detail}</p>}
+                {s.detail && (
+                  <p
+                    className={`stat-cell-detail tabular ${
+                      s.detailTone === "bad" ? "text-bad" : s.detailTone === "good" ? "text-good" : "text-muted"
+                    }`}
+                  >
+                    {s.detail}
+                  </p>
+                )}
                 {s.op && (
                   <span className="stat-op" role="img" aria-label={s.opLabel}>
                     {s.op}
@@ -234,7 +248,7 @@ export default function DashboardView({
                 {timeline ? (
                   <CycleBuildup data={timeline.byDay.map((d) => ({ day: d.day, debits: Number(d.debits) }))} />
                 ) : (
-                  <div className="shimmer h-[232px] w-full" />
+                  <div className="shimmer h-[292px] w-full" />
                 )}
               </div>
             </div>
@@ -245,16 +259,22 @@ export default function DashboardView({
           </div>
           {month && (data.byCategoryPrev?.length || data.byCategory.length) ? (
             <div className="card rise min-w-0 p-5" style={{ "--d": "280ms" } as React.CSSProperties}>
-              <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="text-sm font-medium text-ink2">What changed</h2>
-                <span className="text-[11px] text-muted">against {monthTitle(shiftMonth(month, -1))}</span>
-              </div>
-              <CategoryMovement
-                key={viewKey}
-                now={data.byCategory.map((d) => ({ category: d.category, total: Number(d.total) }))}
-                before={(data.byCategoryPrev ?? []).map((d) => ({ category: d.category, total: Number(d.total) }))}
-                monthLabel={monthTitle(shiftMonth(month, -1))}
-              />
+              <h2 className="mb-4 text-sm font-medium text-ink2">What changed</h2>
+              {timeline ? (
+                <CategoryMovement
+                  key={viewKey}
+                  months={recentMonths}
+                  data={timeline.byCategoryStatementMonth
+                    .filter((r) => recentMonths.includes(r.month))
+                    .map((r) => ({ month: r.month, category: r.category, debits: Number(r.debits) }))}
+                />
+              ) : (
+                <div className="space-y-2">
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="shimmer h-[34px] w-full" />
+                  ))}
+                </div>
+              )}
             </div>
           ) : null}
 
@@ -289,7 +309,11 @@ export default function DashboardView({
                 debits: Number(d.debits),
                 txns: Number(d.txns),
               }))}
-              dues={(data.dues ?? []).map((d) => ({
+              // A statement month shows its own bills, plus an earlier one only
+              // while it is still unpaid. A settled bill stays with its month.
+              dues={(data.dues ?? [])
+                .filter((d) => !month || billMonth(d) === month || (billMonth(d) < month && !d.settled))
+                .map((d) => ({
                 id: d.id,
                 day: d.day,
                 amount: d.amount != null ? Number(d.amount) : null,
@@ -300,6 +324,7 @@ export default function DashboardView({
                 last4: d.last4,
               }))}
               onSettle={onSettle}
+              statementMonth={month}
             />
             )}
           </div>
@@ -382,12 +407,16 @@ const SpendTrendPanel = memo(function SpendTrendPanel({
 const CategoryTrendPanel = memo(function CategoryTrendPanel({ timeline }: { timeline: Timeline | null }) {
   const [span, setSpan] = useState<Span>(6);
   const [by, setBy] = useState<GroupBy>("billed");
-  const data = useMemo(() => {
-    if (!timeline) return [];
-    const months = new Set(runOf(timeline, by, span).map((m) => m.month));
-    return (by === "billed" ? timeline.byCategoryStatementMonth : timeline.byCategoryMonth)
-      .filter((r) => months.has(r.month))
-      .map((r) => ({ month: r.month, category: r.category, debits: Number(r.debits) }));
+  const { data, months } = useMemo(() => {
+    if (!timeline) return { data: [], months: [] };
+    const run = runOf(timeline, by, span).map((m) => m.month);
+    const keep = new Set(run);
+    return {
+      months: run,
+      data: (by === "billed" ? timeline.byCategoryStatementMonth : timeline.byCategoryMonth)
+        .filter((r) => keep.has(r.month))
+        .map((r) => ({ month: r.month, category: r.category, debits: Number(r.debits) })),
+    };
   }, [timeline, by, span]);
   return (
     <div className="card rise min-w-0 p-5 lg:col-span-2" style={{ "--d": "240ms" } as React.CSSProperties}>
@@ -396,10 +425,10 @@ const CategoryTrendPanel = memo(function CategoryTrendPanel({ timeline }: { time
         <RunControls by={by} onBy={setBy} span={span} onSpan={setSpan} />
       </div>
       {timeline ? (
-        <CategoryTrend data={data} />
+        <CategoryTrend data={data} months={months} />
       ) : (
         <>
-          <div className="shimmer h-[260px] w-full" />
+          <div className="shimmer h-[280px] w-full" />
           <div className="mt-3 flex flex-wrap gap-1.5">
             {[0, 1, 2, 3, 4, 5, 6].map((i) => (
               <div key={i} className="shimmer h-[24px] w-[92px]" />

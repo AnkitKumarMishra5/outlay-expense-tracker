@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   const [cards, statements, transactions] = await Promise.all([
     c.execute("SELECT id, bank_id, bank_name, card_label, last4_enc, first4_enc, created_at FROM cards WHERE user_id = $1", [userId]),
     c.execute("SELECT id, card_id, period_start, period_end, statement_date, due_date, total_due, min_due, total_debits, total_credits, txn_count, checks_json, paid_at, parser, created_at FROM statements WHERE user_id = $1", [userId]),
-    c.execute("SELECT id, statement_id, card_id, txn_date, description, amount, type, category, is_fee, is_international FROM transactions WHERE user_id = $1", [userId]),
+    c.execute("SELECT id, statement_id, card_id, txn_date, txn_time, description, amount, type, category, is_fee, is_international FROM transactions WHERE user_id = $1", [userId]),
   ]);
   return new NextResponse(
     JSON.stringify({ exportedAt: new Date().toISOString(), cards: cards.rows.map((r) => ({

@@ -432,8 +432,9 @@ button:active:not(:disabled) {
 
 @media (prefers-reduced-motion: no-preference) {
   .cal-cell:hover {
-    transform: scale(1.18);
+    transform: scale(1.08);
     z-index: 2;
+    box-shadow: 0 8px 22px rgb(0 0 0 / 0.35);
   }
 }
 .cal-cell { transition: transform 0.18s ease; }
@@ -453,16 +454,6 @@ button:active:not(:disabled) {
   text-align: left;
   transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.22s ease,
     background-color 0.22s ease, box-shadow 0.22s ease;
-}
-
-.spine::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(100deg, transparent 42%, rgba(255, 255, 255, 0.07) 50%, transparent 58%);
-  background-size: 240% 100%;
-  background-position: 200% 0;
 }
 
 .spine-edge {
@@ -563,8 +554,6 @@ button:active:not(:disabled) {
     box-shadow: 0 6px 18px rgba(8, 13, 21, 0.14);
   }
   .spine:active { transform: translateX(3px) scale(0.99); }
-  .spine::after { transition: background-position 0.65s ease; }
-  .spine:hover::after { background-position: -70% 0; }
   .spine-edge {
     transform: scaleY(0.5);
     transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
@@ -1059,6 +1048,8 @@ button:active:not(:disabled) {
 }
 .cal-tip-done .cal-tip-name,
 .cal-tip-done .cal-tip-amt { color: var(--color-muted); }
+.cal-tip-group.is-due { color: var(--color-warn); }
+.cal-tip-group.is-settled { color: var(--color-good); }
 
 .demo-frame {
   position: relative;
@@ -2389,42 +2380,6 @@ button:active:not(:disabled) {
   background: color-mix(in oklab, var(--color-accent) 70%, transparent);
 }
 
-/* What moved since last month, and by how much. */
-.mv-summary { font-size: 13px; font-weight: 500; }
-.mv-list { margin-top: 12px; display: grid; gap: 9px; }
-.mv-row {
-  display: grid;
-  grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-}
-.mv-name { display: flex; min-width: 0; align-items: center; gap: 7px; font-size: 12px; color: var(--color-ink2); }
-.mv-dot { width: 8px; height: 8px; flex: none; border-radius: 999px; }
-.mv-track { position: relative; height: 10px; min-width: 0; }
-.mv-axis {
-  position: absolute;
-  left: 50%;
-  top: -1px;
-  bottom: -1px;
-  width: 1px;
-  background: var(--color-line);
-}
-.mv-bar {
-  position: absolute;
-  top: 1px;
-  height: 8px;
-  border-radius: 3px;
-}
-.mv-bar.is-up { left: 50%; background: linear-gradient(90deg, color-mix(in oklab, var(--color-warn) 55%, transparent), var(--color-warn)); }
-.mv-bar.is-down { right: 50%; background: linear-gradient(270deg, color-mix(in oklab, var(--color-good) 55%, transparent), var(--color-good)); }
-.mv-delta { font-size: 12px; white-space: nowrap; }
-.mv-pct { margin-left: 5px; font-size: 10px; color: var(--color-muted); }
-.mv-foot { margin-top: 11px; font-size: 11px; color: var(--color-muted); }
-@media (max-width: 520px) {
-  .mv-row { grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr) auto; gap: 7px; }
-  .mv-name { font-size: 11px; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .month-menu { animation: none; }
   .month-face svg { transition: none; }
@@ -2765,16 +2720,12 @@ button:active:not(:disabled) {
 .cat-chip.is-off { opacity: 0.45; }
 .cat-chip.is-off .cat-chip-dot { background: var(--color-muted) !important; }
 
-.cat-legend .span-picker { flex: 0 0 auto; margin-right: 2px; }
-.cat-reset {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  border: 1px dashed var(--color-line);
-  padding: 3px 10px;
-  font-size: 11.5px;
-  color: var(--color-accent);
+@media (max-width: 560px) {
+  /* One swipeable line of categories instead of a wall of chips. */
+  .cat-legend { flex-wrap: nowrap; overflow-x: auto; margin-right: -20px; padding-right: 20px; scrollbar-width: none; }
+  .cat-legend::-webkit-scrollbar { display: none; }
+  .cat-chip { flex: 0 0 auto; }
 }
-.cat-reset:hover { border-color: var(--color-accent); }
 
 .sweep-wrap { position: relative; display: inline-flex; }
 .sweep-pop {
@@ -2841,11 +2792,274 @@ button:active:not(:disabled) {
 .sweep-go:disabled { opacity: 0.5; }
 .sweep-pop-foot { margin-top: 8px; font-size: 10.5px; line-height: 1.45; color: var(--color-muted); }
 
+/* No colour here: plain CSS sits outside Tailwind's layers and would beat the tone classes. */
 .stat-cell-detail {
   margin-top: 3px;
   font-size: 10.5px;
-  color: var(--color-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The row someone came to see: two pulses of the accent, then it settles. */
+.txn-spot > td { animation: txn-spot 3s ease-out 1 both; }
+.txn-spot > td:first-child { box-shadow: inset 3px 0 0 var(--color-accent); }
+@keyframes txn-spot {
+  0% { background-color: color-mix(in srgb, var(--color-accent) 34%, transparent); }
+  18% { background-color: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+  34% { background-color: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+  100% { background-color: color-mix(in srgb, var(--color-accent) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .txn-spot > td { animation: none; background-color: color-mix(in srgb, var(--color-accent) 18%, transparent); }
+}
+
+/* A span picker that sits beside full-size controls rather than inside a card header. */
+.span-picker.is-roomy { border-radius: 10px; }
+.span-picker.is-roomy button { padding: 6px 13px; border-radius: 8px; font-size: 12.5px; }
+
+/* Several cards at once: a short stack, the front card under the beam. */
+.ai-scan-deck { padding-top: 32px; }
+.ai-deck-back {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  right: 0;
+  transform-origin: 50% 0;
+  transform: translateY(calc(var(--depth) * -16px)) scale(calc(1 - var(--depth) * 0.06));
+  opacity: calc(1 - var(--depth) * 0.2);
+  filter: brightness(0.7) saturate(0.85);
+  transition: transform 460ms cubic-bezier(0.22, 1, 0.36, 1), opacity 460ms ease, filter 460ms ease;
+}
+.ai-deck-back > .cc { pointer-events: none; }
+.ai-deck-front { position: relative; animation: ai-deck-in 540ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes ai-deck-in {
+  from { transform: translateY(-16px) scale(0.94); opacity: 0.55; filter: brightness(0.7); }
+  to { transform: none; opacity: 1; filter: none; }
+}
+.ai-deck-caption {
+  margin-top: 14px;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--color-ink2);
+}
+.ai-deck-more {
+  flex: none;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10.5px;
+  color: var(--color-muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-deck-front { animation: none; }
+  .ai-deck-back { transition: none; }
+}
+
+/* A small tooltip for anything carrying data-hint, shown on hover and focus. */
+.hint { position: relative; cursor: help; }
+.hint::after {
+  content: attr(data-hint);
+  position: absolute;
+  bottom: calc(100% + 9px);
+  right: -6px;
+  z-index: 40;
+  width: max-content;
+  max-width: 250px;
+  white-space: pre-line;
+  text-align: left;
+  padding: 6px 9px;
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-ink2);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: 0 12px 30px rgba(8, 13, 21, 0.38);
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+.hint:hover::after,
+.hint:focus-visible::after { opacity: 1; transform: none; }
+
+/* A settled bill carries a stamp, not just a word. */
+.settled-seal {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px 0;
+  border: 1.5px solid color-mix(in srgb, var(--color-good) 75%, transparent);
+  border-radius: 5px;
+  outline: 1px solid color-mix(in srgb, var(--color-good) 30%, transparent);
+  outline-offset: 1.5px;
+  color: var(--color-good);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  transform: rotate(-7deg);
+  opacity: 0.94;
+}
+
+.spine-share { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.spine-share .spine-track { flex: 1; margin-top: 0; }
+.spine-share-pct { font-size: 9.5px; letter-spacing: 0.02em; color: var(--color-muted); white-space: nowrap; }
+.spine-seal {
+  flex-shrink: 0;
+  margin-right: 2px;
+  padding: 0.5px 5px 0;
+  border-width: 1.25px;
+  border-radius: 4px;
+  outline-offset: 1px;
+  font-size: 8px;
+  line-height: 12px;
+  letter-spacing: 0.14em;
+  transform: rotate(-5deg);
+}
+
+@keyframes seal-stamp {
+  0% { opacity: 0; transform: scale(2.1) rotate(-16deg); }
+  55% { opacity: 1; transform: scale(0.9) rotate(-4deg); }
+  75% { transform: scale(1.06) rotate(-5.5deg); }
+  100% { opacity: 0.94; transform: scale(1) rotate(-5deg); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .spine-seal { animation: seal-stamp 0.55s cubic-bezier(0.3, 1.4, 0.5, 1) both; animation-delay: calc(var(--i, 0) * 45ms + 120ms); }
+}
+
+/* Some of a date's bills settled: the arc fills green as they are paid. */
+.cal-due-part {
+  background: radial-gradient(circle closest-side, var(--color-warn) calc(100% - 2.75px), transparent calc(100% - 2.25px));
+  font-size: 8px;
+}
+.cal-due-part::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(
+    var(--color-good) calc(var(--done, 0) * 1turn),
+    color-mix(in srgb, var(--color-warn) 45%, transparent) 0
+  );
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+}
+.cal-legend-chip.cal-due-part { position: relative; top: 0; right: 0; }
+
+@media (max-width: 640px) {
+  .cal-stats { display: grid; grid-template-columns: auto minmax(0, 1fr); width: 100%; }
+  .cal-stats dd { white-space: normal; }
+  .cal-stats .cal-sep { display: none; }
+  .cal-stats .cal-settled-seg { display: block; }
+  /* Narrow cells: the card tags become colour dots, the tooltip names them. */
+  .cal-cell:has(.cal-tags) { padding-bottom: 6px; }
+  .cal-tags { bottom: 4px; gap: 2px; }
+  .cal-tag { min-width: 0; width: 5px; height: 5px; padding: 0; border-radius: 9999px; font-size: 0; line-height: 0; }
+  .cal-tag.is-more { display: none; }
+}
+
+/* Above the cards with no bill, when sorted by what is due. */
+.rail-rule { position: relative; height: 9px; list-style: none; }
+.rail-rule::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  right: 8px;
+  height: 1px;
+  background: color-mix(in srgb, var(--color-muted) 45%, transparent);
+}
+
+/* Calendar header: month controls on the left, the month in three figures on the right. */
+.cal-nav {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--color-line);
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--color-ink2);
+  transition: border-color 140ms ease, color 140ms ease;
+}
+.cal-nav:hover:not(:disabled) { border-color: var(--color-muted); color: var(--color-ink); }
+.cal-nav:disabled { opacity: 0.3; }
+.cal-today {
+  margin-left: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--color-line);
+  border-radius: 7px;
+  font-size: 11.5px;
+  color: var(--color-ink2);
+  transition: border-color 140ms ease, color 140ms ease, opacity 140ms ease;
+}
+.cal-today:hover:not(:disabled) { border-color: var(--color-accent); color: var(--color-accent); }
+.cal-today:disabled { opacity: 0.4; cursor: default; }
+.cal-stats { display: flex; flex-wrap: wrap; gap: 0; }
+.cal-stats > div { padding: 0 14px; border-left: 1px solid var(--color-line); }
+.cal-stats > div:first-child { padding-left: 0; border-left: none; }
+.cal-stats dt { font-size: 10.5px; color: var(--color-muted); }
+.cal-stats dd { margin-top: 1px; font-size: 13.5px; font-weight: 500; white-space: nowrap; }
+.cal-stats .cal-sub { margin-top: 2px; font-size: 10.5px; font-weight: 400; }
+
+/* Where it went: one row per category, each drawn on its own scale. */
+.cat-rows { display: grid; }
+.cat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) 96px 104px;
+  align-items: center;
+  column-gap: 16px;
+  padding: 8px 2px;
+  border-top: 1px solid color-mix(in srgb, var(--color-line) 70%, transparent);
+}
+.cat-row-head { border-top: none; padding: 0 2px 6px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+.cat-row-head .cat-row-amt,
+.cat-row-head .cat-row-chg { font-size: 10px; }
+.cat-row-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
+.cat-row-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 2px; }
+.cat-bars { display: flex; align-items: flex-end; gap: 4px; height: 30px; outline: none; }
+.cat-bars.hint::after { right: auto; left: 0; }
+.cat-bar {
+  flex: 1 1 0;
+  max-width: 26px;
+  height: 2px;
+  border-radius: 3px 3px 1px 1px;
+  background: var(--bar);
+  opacity: 0.4;
+  transform-origin: bottom;
+}
+.cat-bar.is-latest { opacity: 1; }
+.cat-bar.is-zero { background: var(--color-line); opacity: 1; }
+.cat-bars:hover .cat-bar { opacity: 0.75; }
+.cat-bars:hover .cat-bar.is-latest,
+.cat-bars:hover .cat-bar.is-zero { opacity: 1; }
+.cat-row-amt { text-align: right; font-size: 13px; }
+.cat-row-chg { text-align: right; font-size: 12px; line-height: 1.25; }
+.cat-row-pct { display: block; font-size: 10px; }
+@keyframes cat-bar-in { from { transform: scaleY(0); } }
+@media (prefers-reduced-motion: no-preference) {
+  .cat-bar { animation: cat-bar-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--k, 0) * 30ms); }
+}
+@media (max-width: 560px) {
+  .cat-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "name amt chg" "bars bars bars";
+    row-gap: 6px;
+    column-gap: 12px;
+  }
+  .cat-row-name, .cat-row-head > span:first-child { grid-area: name; }
+  .cat-bars { grid-area: bars; height: 24px; }
+  .cat-row-amt { grid-area: amt; }
+  .cat-row-chg { grid-area: chg; min-width: 64px; }
+  .cat-row-head .cat-row-span { display: none; }
 }

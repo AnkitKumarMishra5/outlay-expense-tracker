@@ -52,6 +52,7 @@ const SCHEMA = [
     total_credits DOUBLE PRECISION NOT NULL DEFAULT 0,
     stated_debits DOUBLE PRECISION,
     stated_credits DOUBLE PRECISION,
+    previous_balance DOUBLE PRECISION,
     txn_count INTEGER NOT NULL DEFAULT 0,
     checks_json TEXT NOT NULL DEFAULT '[]',
     paid_at TEXT,
@@ -65,6 +66,7 @@ const SCHEMA = [
     statement_id TEXT NOT NULL REFERENCES statements(id) ON DELETE CASCADE,
     card_id TEXT NOT NULL,
     txn_date TEXT NOT NULL,
+    txn_time TEXT,
     description TEXT NOT NULL,
     amount DOUBLE PRECISION NOT NULL,
     type TEXT NOT NULL CHECK (type IN ('debit','credit')),
@@ -108,6 +110,8 @@ const MIGRATIONS = [
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS stated_debits DOUBLE PRECISION`,
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS stated_credits DOUBLE PRECISION`,
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS paid_at TEXT`,
+  `ALTER TABLE statements ADD COLUMN IF NOT EXISTS previous_balance DOUBLE PRECISION`,
+  `ALTER TABLE transactions ADD COLUMN IF NOT EXISTS txn_time TEXT`,
   // Credits replaced "Payments & Refunds". A credit is always Credits, and a
   // charge that was filed there belongs nowhere in particular until reviewed.
   `UPDATE transactions SET category = 'Other' WHERE type = 'debit' AND category IN ('Payments & Refunds', 'Credits')`,

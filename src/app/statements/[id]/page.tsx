@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { play } from "@/lib/sound";
 import PaidToggle from "@/components/PaidToggle";
-import { useCallback, useEffect, useState, use } from "react";
+import { useCallback, useEffect, useRef, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import BankBadge from "@/components/BankBadge";
 import CheckList from "@/components/CheckList";
@@ -25,6 +25,10 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
   const { id } = use(params);
   const router = useRouter();
   const [data, setData] = useState<Detail | null>(null);
+  /** The row someone arrived here to see, lit for a moment. */
+  const [spot, setSpot] = useState<string | null>(null);
+  const spotted = useRef(false);
+  const spotTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [missing, setMissing] = useState(false);
   const toast = useToast();
 
@@ -38,6 +42,38 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     load();
   }, [load]);
+
+  // Arriving from the transactions page with ?txn=, bring that row into view
+  // once the table has drawn, light it for three seconds, then tidy the URL so
+  // a reload does not do it again.
+  useEffect(() => {
+    if (!data || spotted.current) return;
+    spotted.current = true;
+    const want = new URLSearchParams(window.location.search).get("txn");
+    if (!want || !data.transactions.some((t) => t.id === want)) return;
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Held in a ref, not returned as cleanup: the page refetches after it loads,
+    // and a cleanup on that refetch would cancel the fade before it ran.
+    spotTimers.current.push(
+      setTimeout(() => {
+        document.getElementById(`txn-${want}`)?.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "center" });
+        setSpot(want);
+      }, 350),
+      setTimeout(() => {
+        setSpot(null);
+        window.history.replaceState(null, "", window.location.pathname);
+      }, 3350)
+    );
+  }, [data]);
+
+  useEffect(
+    () => () => {
+      spotTimers.current.forEach(clearTimeout);
+      spotTimers.current = [];
+      spotted.current = false;
+    },
+    []
+  );
 
   async function remove() {
     if (!confirm("Delete this statement and all its transactions?")) return;
@@ -95,7 +131,11 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
         {([
           { k: "Spends", n: Number(s.total_debits), text: null },
           { k: "Credits", n: Number(s.total_credits), text: null },
-          { k: "Total due", n: s.total_due != null ? Number(s.total_due) : null, text: null },
+          {
+            k: s.total_due != null && Number(s.total_due) < 0 ? "In credit" : "Total due",
+            n: s.total_due != null ? Math.abs(Number(s.total_due)) : null,
+            text: null,
+          },
           { k: "Due date", n: null, text: s.due_date ?? "n/a" },
         ] as { k: string; n: number | null; text: string | null }[]).map((tile, i) => (
           <div key={tile.k} className="card rise p-4" style={{ "--d": `${i * 60}ms` } as React.CSSProperties}>
@@ -122,7 +162,7 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
             Recategorise with AI
           </Link>
         </div>
-        <SavedTxnTable txns={data.transactions} onChanged={load} />
+        <SavedTxnTable txns={data.transactions} onChanged={load} spot={spot} />
       </div>
     </div>
   );

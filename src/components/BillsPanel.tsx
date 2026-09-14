@@ -146,8 +146,11 @@ export default function BillsPanel({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h2 className="text-sm font-medium text-ink2">Bills</h2>
         <p className="text-xs text-ink2">
-          <span className="tabular">{currentSettled.length}</span> of{" "}
-          <span className="tabular">{current.length}</span> settled this cycle
+          <span className={currentSettled.length ? "text-good" : ""}>
+            <span className="tabular">{currentSettled.length}</span> of <span className="tabular">{current.length}</span>{" "}
+            settled
+          </span>{" "}
+          this cycle
         </p>
         {currentSettled.length > 0 && (
           <button
@@ -196,9 +199,15 @@ export default function BillsPanel({
                 <span className="text-muted">•••• {b.last4 ?? "????"}</span>
               </span>
               <span className={`hidden whitespace-nowrap sm:inline ${late ? "text-bad" : "text-muted"}`}>
-                {b.settled ? (b.paid_at ? `settled ${localDay(b.paid_at)} · due ${b.day}` : `settled · due ${b.day}`) : relative(b.day, now)}
+                {b.settled ? (
+                  <>
+                    <span className="text-good">settled{b.paid_at ? ` ${localDay(b.paid_at)}` : ""}</span> · due {b.day}
+                  </>
+                ) : (
+                  relative(b.day, now)
+                )}
               </span>
-              <span className="whitespace-nowrap tabular text-ink">{inr(Number(b.amount ?? 0))}</span>
+              <span className={`whitespace-nowrap tabular ${b.settled ? "text-muted" : "text-ink"}`}>{inr(Number(b.amount ?? 0))}</span>
               {onSettle && !credit && (
                 <button
                   onClick={() => settle(b, !b.settled)}
@@ -206,7 +215,7 @@ export default function BillsPanel({
                   className={`shrink-0 whitespace-nowrap rounded-md border px-2 py-0.5 text-[10.5px] transition-colors disabled:opacity-40 ${
                     b.settled
                       ? "border-line text-muted hover:border-muted hover:text-ink"
-                      : "border-accent/50 text-accent hover:bg-accent/10"
+                      : "border-good/50 text-good hover:bg-good/10"
                   }`}
                 >
                   {busy === b.id ? "..." : b.settled ? "Mark as unsettled" : "Mark as settled"}

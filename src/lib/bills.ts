@@ -21,6 +21,21 @@ function statementMonth(b: Bill) {
   return monthIndex(new Date(due).toISOString().slice(0, 10));
 }
 
+/** Each card's bill for a statement month, or its latest bill when no month is picked. */
+export function billsByCard(dues: Bill[], month: string | null) {
+  const out: Record<string, { amount: number | null; settled: boolean; txns: number | null }> = {};
+  for (const d of [...dues].sort((a, b) => a.day.localeCompare(b.day))) {
+    if (month && billMonth(d) !== month) continue;
+    const prior = month ? out[d.card_id] : undefined;
+    out[d.card_id] = {
+      amount: d.amount != null ? Number(d.amount) : (prior?.amount ?? null),
+      settled: Boolean(d.settled) && (prior?.settled ?? true),
+      txns: d.txn_count != null ? (prior?.txns ?? 0) + Number(d.txn_count) : (prior?.txns ?? null),
+    };
+  }
+  return out;
+}
+
 /** The month a statement belongs to: the month it was generated in. */
 export function billMonth(b: Bill): string {
   if (b.statement_date) return b.statement_date.slice(0, 7);
@@ -68,7 +83,8 @@ export function billCycle(bills: Bill[], now = today(), month?: string): BillCyc
   const overdue = open.filter((b) => b.day < now);
   const amount = (list: Bill[]) => list.reduce((a, b) => a + Math.max(0, Number(b.amount ?? 0)), 0);
 
-  const owed = open.reduce((a, b) => a + Number(b.amount ?? 0), 0);
+  // A card in credit owes nothing; it does not pay down another card's bill.
+  const owed = open.reduce((a, b) => a + Math.max(0, Number(b.amount ?? 0)), 0);
   const cleared = amount(settled);
   // Every bill in the cycle at face value, which is what the statements add up
   // to. Deriving it from cleared plus what is left clips differently and left

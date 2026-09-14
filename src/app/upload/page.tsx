@@ -16,7 +16,7 @@ import { useToast } from "@/components/Toasts";
 import { getJson } from "@/lib/api";
 import { inr } from "@/lib/format";
 import { BANKS, bankById } from "@/lib/banks";
-import { runChecks } from "@/lib/checks";
+import { runChecks, sameStatement } from "@/lib/checks";
 import type { Detection } from "@/lib/detect";
 import { CardRow, Check, ParsedTxn, StatementSummary } from "@/lib/types";
 
@@ -54,13 +54,17 @@ interface Item {
   statementId?: string;
 }
 
+/** One file, however many times it is dropped. */
+const fileId = (f: File) => `${f.name}-${f.size}-${Math.round(f.lastModified)}`;
+
 interface AiInfo {
   configured: boolean;
   limit: number;
 }
 
 interface AiProgress {
-  card: OverlayCard | null;
+  /** Every card in the batch, in the order its statements were saved. */
+  deck: OverlayCard[];
   merchants: string[];
   statements: number;
   cards: number;
@@ -141,11 +145,15 @@ export default function Upload() {
     const skipped = Array.from(list).length - incoming.length;
     if (skipped > 0) toast.push(`${skipped} file(s) skipped`, { detail: "Only PDF statements are accepted.", tone: "warn" });
     if (!incoming.length) return;
+    const have = new Set(items.map((i) => i.id));
+    const fresh = incoming.filter((f, k) => !have.has(fileId(f)) && incoming.findIndex((g) => fileId(g) === fileId(f)) === k);
+    if (fresh.length < incoming.length) {
+      const n = incoming.length - fresh.length;
+      toast.push(`${n} file${n === 1 ? " is" : "s are"} already in the list`, { detail: "The same file was added twice, so it is only read once.", tone: "warn" });
+    }
+    if (!fresh.length) return;
     play("drop");
-    setItems((prev) => [
-      ...prev,
-      ...incoming.map((file) => ({ id: `${file.name}-${file.size}-${Math.round(file.lastModified)}`, file, status: "queued" as Status })),
-    ]);
+    setItems((prev) => [...prev, ...fresh.map((file) => ({ id: fileId(file), file, status: "queued" as Status }))]);
   }
 
   async function parseOne(item: Item, overrides?: { password?: string }): Promise<Item> {
@@ -176,7 +184,7 @@ export default function Upload() {
     setItems((prev) =>
       prev.map((i) => {
         if (i.id !== itemId || !i.parsed) return i;
-        const kept = i.parsed.checks.filter((c) => c.id === "continuity" || c.id === "duplicate-statement");
+        const kept = i.parsed.checks.filter((c) => c.id === "continuity" || c.id === "already-saved");
         const parsed = { ...i.parsed, transactions: next };
         return {
           ...i,
@@ -244,7 +252,7 @@ export default function Upload() {
     setBusy(true);
     setAiOutcome(null);
     let saved = 0;
-    const targets = items.filter((i) => i.status === "ready" && i.parsed && i.cardId);
+    const targets = items.filter((i) => i.status === "ready" && i.parsed && i.cardId && !duplicates.has(i.id));
     const patch = (id: string, next: Partial<Item>) =>
       setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...next } : i)));
     const spentCopy = "This card has had both of its AI reviews this month, so the keyword categories were kept. They come back on the 1st.";
@@ -285,9 +293,12 @@ export default function Upload() {
 
     // One model call for the whole batch, one review off each card involved.
     play("scan");
-    const firstCard = cards.find((c) => c.id === review[0].item.cardId) ?? null;
+    const deck = [...new Set(review.map((r) => r.item.cardId))]
+      .map((id) => cards.find((c) => c.id === id))
+      .filter((c): c is CardRow => Boolean(c))
+      .map((c) => ({ bankId: c.bank_id, label: c.card_label, last4: c.last4 }));
     setAiProgress({
-      card: firstCard ? { bankId: firstCard.bank_id, label: firstCard.card_label, last4: firstCard.last4 } : null,
+      deck,
       merchants: review.flatMap((r) => r.item.parsed!.transactions.map((t) => t.description)),
       statements: review.length,
       cards: new Set(review.map((r) => r.item.cardId)).size,
@@ -335,9 +346,31 @@ export default function Upload() {
     });
   }
 
+  /**
+   * Statements that would double-count: already saved for their card, or a
+   * second copy of one earlier in this batch. They are named here and left
+   * out of saving, rather than failing one by one when Save is pressed.
+   */
+  const duplicates = new Map<string, string>();
+  items.forEach((item, i) => {
+    if (!item.parsed || !item.cardId || item.status === "saved") return;
+    const saved =
+      item.parsed.matchedCardId === item.cardId &&
+      item.parsed.checks.some((c) => c.id === "already-saved" && c.status === "fail");
+    if (saved) {
+      duplicates.set(item.id, "This statement is already saved for this card, so it will be skipped.");
+      return;
+    }
+    const first = items
+      .slice(0, i)
+      .find((o) => o.parsed && o.cardId === item.cardId && sameStatement(o.parsed.summary, item.parsed!.summary));
+    if (first) duplicates.set(item.id, `Same statement as “${first.file.name}” above, on the same card. It will be skipped.`);
+  });
+
   const counts = {
     total: items.length,
-    ready: items.filter((i) => i.status === "ready").length,
+    ready: items.filter((i) => i.status === "ready" && !duplicates.has(i.id)).length,
+    duplicates: duplicates.size,
     needsCard: items.filter((i) => i.status === "needs-card").length,
     needsPassword: items.filter((i) => i.status === "needs-password").length,
     rejected: items.filter((i) => i.status === "rejected" || i.status === "failed").length,
@@ -395,6 +428,7 @@ export default function Upload() {
             <div className="ml-auto flex flex-wrap gap-2 text-xs">
               {counts.ready > 0 && <span className="rounded-md border border-good/40 bg-good/10 px-2 py-1 text-good">{counts.ready} ready</span>}
               {counts.needsCard > 0 && <span className="rounded-md border border-warn/40 bg-warn/10 px-2 py-1 text-warn">{counts.needsCard} need a card</span>}
+              {counts.duplicates > 0 && <span className="rounded-md border border-bad/40 bg-bad/10 px-2 py-1 text-bad">{counts.duplicates} duplicate</span>}
               {counts.needsPassword > 0 && <span className="rounded-md border border-warn/40 bg-warn/10 px-2 py-1 text-warn">{counts.needsPassword} need a password</span>}
               {counts.rejected > 0 && <span className="rounded-md border border-bad/40 bg-bad/10 px-2 py-1 text-bad">{counts.rejected} rejected</span>}
               {counts.saved > 0 && <span className="rounded-md border border-good/40 bg-good/10 px-2 py-1 text-good">{counts.saved} saved</span>}
@@ -455,6 +489,12 @@ export default function Upload() {
                   </div>
 
                   {item.error && <p className="mt-1.5 text-xs text-bad">{item.error}</p>}
+                  {duplicates.has(item.id) && (
+                    <p className="mt-2 flex flex-wrap items-baseline gap-x-2 rounded-md border border-bad/40 bg-bad/10 px-2.5 py-1.5 text-xs">
+                      <span className="font-medium text-bad">Duplicate</span>
+                      <span className="text-ink2">{duplicates.get(item.id)}</span>
+                    </p>
+                  )}
                   {item.aiNote && (
                     <p className={`mt-1.5 text-xs ${item.aiTone === "good" ? "text-good" : item.aiTone === "bad" ? "text-bad" : "text-warn"}`}>
                       {item.aiNote}
@@ -792,7 +832,7 @@ export default function Upload() {
               : `Reading ${aiProgress.merchants.length} merchant names`
           }
           footnote="One of the two monthly AI reviews for each card here. Only merchant names are sent, never amounts or card details."
-          card={aiProgress.card}
+          cards={aiProgress.deck}
           merchants={aiProgress.merchants}
         />
       )}

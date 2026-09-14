@@ -19,13 +19,21 @@ export interface CardStat {
   nextDueAmount: number | null;
   /** Transactions on this card's statement for the cycle being shown. */
   billedTxns?: number | null;
+  /** This card's bill for the statement month on screen, settled or not. */
+  bill?: { amount: number | null; settled: boolean } | null;
+}
+
+/** Still owed, then a bill already settled, then no bill at all. */
+function dueRank(s: CardStat | undefined) {
+  if ((s?.nextDueAmount ?? 0) > 0) return 0;
+  return s?.bill ? 1 : 2;
 }
 
 type SortMode = "bank" | "due" | "name";
 
 /** The money sort, then the two for finding a card. */
 const SORTS: { value: SortMode; label: string; title: string }[] = [
-  { value: "due", label: "Due", title: "What each card billed this cycle, largest first" },
+  { value: "due", label: "Due", title: "Cards with a bill first: still due, then settled. Cards with no bill after the line" },
   { value: "bank", label: "Bank", title: "Grouped by bank" },
   { value: "name", label: "A–Z", title: "By card name" },
 ];
@@ -113,16 +121,8 @@ export default function CardRail({
     return [...ordered, ...behind.values()].slice(0, 2);
   }, [cards, hero, recent]);
 
-  /** What the bars are drawn against; falls back to spend when nothing is owed. */
-  const peak = useMemo(() => {
-    const owedPeak = Math.max(0, ...cards.map((c) => cardStats?.[c.id]?.nextDueAmount ?? 0));
-    if (owedPeak > 0) return owedPeak;
-    return Math.max(1, ...cards.map((c) => cardStats?.[c.id]?.debits ?? 0));
-  }, [cards, cardStats]);
-  const peakIsOwed = useMemo(
-    () => cards.some((c) => (cardStats?.[c.id]?.nextDueAmount ?? 0) > 0),
-    [cards, cardStats]
-  );
+  /** Each bar is the card's share of spends across every card. */
+  const totalSpend = cards.reduce((a, c) => a + (cardStats?.[c.id]?.debits ?? 0), 0);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -138,8 +138,17 @@ export default function CardRail({
       const sa = cardStats?.[a.id];
       const sb = cardStats?.[b.id];
       switch (sort) {
-        case "due":
-          return (sb?.debits ?? 0) - (sa?.debits ?? 0) || a.card_label.localeCompare(b.card_label);
+        case "due": {
+          // Still owed, largest first, then bills already settled, then cards
+          // with no bill. The rail draws a rule above the ones with no bill.
+          return (
+            dueRank(sa) - dueRank(sb) ||
+            (sb?.nextDueAmount ?? 0) - (sa?.nextDueAmount ?? 0) ||
+            (sb?.bill?.amount ?? 0) - (sa?.bill?.amount ?? 0) ||
+            (sb?.debits ?? 0) - (sa?.debits ?? 0) ||
+            a.card_label.localeCompare(b.card_label)
+          );
+        }
         case "name":
           return a.card_label.localeCompare(b.card_label);
         case "bank":
@@ -210,12 +219,15 @@ export default function CardRail({
     const owed = stat?.nextDueAmount ?? null;
     const txnCount = stat?.billedTxns ?? (stat?.txns != null ? stat.txns : null);
     const left = due ? daysUntil(due) : null;
-    const dueTone =
-      left === null ? "" : left < 0 ? "text-bad font-medium" : left <= 2 ? "text-bad" : left <= 7 ? "text-warn" : "text-ink2";
+    // Anything still to pay reads amber, and red once it is two days out or late.
+    const dueTone = left === null ? "text-warn" : left < 0 ? "text-bad font-medium" : left <= 2 ? "text-bad" : "text-warn";
+    const bill = stat?.bill ?? null;
+    const share = totalSpend > 0 ? (spend / totalSpend) * 100 : 0;
+    const shareText = spend > 0 ? `${share < 1 ? "<1" : Math.round(share)}% of spends` : "no spends";
     const txnText = stat?.txns ? `${stat.txns} txn${stat.txns === 1 ? "" : "s"}` : "no spend";
     const title = [
-      owed != null ? `${inr(owed)} outstanding${due ? `, ${dueLabel(due)}` : ""}` : "Nothing outstanding",
-      spend > 0 ? `${inr(spend)} spent on ${txnText}` : "No spend this period",
+      owed != null ? `${inr(owed)} outstanding${due ? `, ${dueLabel(due)}` : ""}` : bill ? "Bill settled" : "No bill",
+      spend > 0 ? `${inr(spend)} spent on ${txnText}, ${shareText} across all cards` : "No spend this period",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -240,7 +252,7 @@ export default function CardRail({
                 {
                   "--edge": bank.color,
                   "--edge2": bank.c2,
-                  "--pct": Math.max(0.02, (peakIsOwed ? (owed ?? 0) : spend) / peak),
+                  "--pct": spend > 0 ? Math.max(0.02, share / 100) : 0,
                 } as React.CSSProperties
               }
               title={title}
@@ -250,11 +262,15 @@ export default function CardRail({
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="truncate text-[13px] font-medium text-ink">{c.card_label}</span>
                   {owed != null ? (
-                    <span className={`shrink-0 text-[13px] font-semibold tabular ${dueTone || "text-ink"}`}>
+                    <span className={`shrink-0 text-[13px] font-semibold tabular ${dueTone}`}>
                       {inr(owed)}
                     </span>
+                  ) : bill ? (
+                    <span className="shrink-0 text-[13px] tabular text-muted">
+                      {bill.amount != null && bill.amount > 0 ? inr(bill.amount) : ""}
+                    </span>
                   ) : (
-                    <span className="shrink-0 text-[11px] text-muted">settled</span>
+                    <span className="shrink-0 text-[11px] text-muted">no bill</span>
                   )}
                 </span>
                 <span className="mt-0.5 flex items-center justify-between gap-2">
@@ -270,17 +286,20 @@ export default function CardRail({
                       )}
                     </span>
                   </span>
-                  <span className="min-w-0 truncate text-right text-[10px] text-muted">
-                    {due ? (
-                      <span className={dueTone}>
-                        {left !== null && left <= 7 && <span className="spine-due-dot" aria-hidden />}
-                        {dueLabel(due)}
-                      </span>
-                    ) : null}
-                  </span>
+                  {due ? (
+                    <span className={`min-w-0 truncate text-right text-[10px] ${dueTone}`}>
+                      {left !== null && left <= 7 && <span className="spine-due-dot" aria-hidden />}
+                      {dueLabel(due)}
+                    </span>
+                  ) : bill?.settled ? (
+                    <span className="settled-seal spine-seal">Settled</span>
+                  ) : null}
                 </span>
-                <span className="spine-track" aria-hidden>
-                  <span className="spine-fill" />
+                <span className="spine-share">
+                  <span className="spine-track" aria-hidden>
+                    <span className="spine-fill" />
+                  </span>
+                  <span className="spine-share-pct tabular">{shareText}</span>
                 </span>
               </span>
             </button>
@@ -431,7 +450,14 @@ export default function CardRail({
                     </motion.li>
                   );
                 })
-            : visible.map((c, i) => renderRow(c, i))}
+            : visible.flatMap((c, i) => {
+                // In Due, a thin rule above the cards with no bill this month.
+                const rule =
+                  sort === "due" && i > 0 && dueRank(cardStats?.[visible[i - 1].id]) < 2 && dueRank(cardStats?.[c.id]) === 2 ? (
+                    <motion.li key="rail-rule" layout transition={SPRING} className="rail-rule" aria-hidden />
+                  ) : null;
+                return rule ? [rule, renderRow(c, i)] : [renderRow(c, i)];
+              })}
           </ul>
         </LayoutGroup>
       )}

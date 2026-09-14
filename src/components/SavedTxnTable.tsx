@@ -8,6 +8,7 @@ import { inr } from "@/lib/format";
 export interface SavedTxn {
   id: string;
   txn_date: string;
+  txn_time?: string | null;
   description: string;
   amount: number;
   type: string;
@@ -21,10 +22,13 @@ export default function SavedTxnTable({
   txns,
   onChanged,
   flashed,
+  spot,
 }: {
   txns: SavedTxn[];
   onChanged: () => void;
   flashed?: Set<string>;
+  /** A row to light up, when someone arrived here looking for it. */
+  spot?: string | null;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
@@ -86,10 +90,16 @@ export default function SavedTxnTable({
               return (
                 <tr
                   key={t.id}
-                  className="rise row-hover border-b border-line/50 last:border-0 hover:bg-surface2/60"
+                  id={`txn-${t.id}`}
+                  className={`rise row-hover scroll-mt-24 border-b last:border-0 hover:bg-surface2/60 ${
+                    txns[i + 1] && txns[i + 1].txn_date !== t.txn_date ? "border-muted/45" : "border-line/30"
+                  } ${spot === t.id ? "txn-spot" : ""}`}
                   style={{ "--d": `${Math.min(i, 15) * 30}ms` } as React.CSSProperties}
                 >
-                  <td className="whitespace-nowrap py-2 pr-4 text-ink2 tabular">{t.txn_date}</td>
+                  <td className="whitespace-nowrap py-2 pr-4 text-ink2 tabular">
+                    {t.txn_date}
+                    {t.txn_time && <span className="block text-[11px] leading-tight text-muted">{t.txn_time}</span>}
+                  </td>
                   <td className="max-w-[11rem] truncate py-2 pr-4 sm:max-w-[26rem]" title={t.description}>
                     {t.description}
                     {t.is_fee === 1 && (

@@ -155,10 +155,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const priorsRs = await c.execute("SELECT period_start, period_end FROM statements WHERE card_id = $1 AND user_id = $2", [matched?.id ?? "", userId]);
+  const priorsRs = await c.execute(
+    "SELECT period_start, period_end, statement_date, due_date, total_due FROM statements WHERE card_id = $1 AND user_id = $2",
+    [matched?.id ?? "", userId]
+  );
   const priors: PriorStatementInfo[] = priorsRs.rows.map((r) => ({
     periodStart: r.period_start as string | null,
     periodEnd: r.period_end as string | null,
+    statementDate: r.statement_date as string | null,
+    dueDate: r.due_date as string | null,
+    totalDue: r.total_due != null ? Number(r.total_due) : null,
   }));
   const checks = runChecks(parsed, priors);
 

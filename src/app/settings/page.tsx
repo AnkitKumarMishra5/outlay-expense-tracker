@@ -103,7 +103,7 @@ export default function Settings() {
         <button
           onClick={async () => {
             await fetch("/api/auth/logout", { method: "POST" });
-            router.replace("/login");
+            window.location.replace("/login");
           }}
           className="mt-3 rounded-lg border border-line px-3 py-1.5 text-sm text-ink2 hover:border-muted hover:text-ink"
         >

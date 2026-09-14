@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useToast } from "./Toasts";
 import { createPortal } from "react-dom";
-import { inr } from "@/lib/format";
+import { inr, monthTitle } from "@/lib/format";
 import { useChartTokens } from "@/lib/chartTokens";
 import { bankById } from "@/lib/banks";
 
@@ -64,11 +64,14 @@ export default function SpendCalendar({
   dayCards,
   dues,
   onSettle,
+  statementMonth,
 }: {
   data: DaySpend[];
   dayCards: DayCard[];
   dues: DueDate[];
   onSettle?: (id: string, settled: boolean) => Promise<void> | void;
+  /** The dashboard's statement month, which decides whose charges and bills are shown. */
+  statementMonth?: string | null;
 }) {
   const t = useChartTokens();
   const toast = useToast();
@@ -132,10 +135,23 @@ export default function SpendCalendar({
   const cells = Array.from({ length: daysInMonth }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`);
 
   const monthSpend = cells.reduce((a, k) => a + (byDay.get(k)?.debits ?? 0), 0);
-  const monthDue = cells.reduce(
-    (a, k) => a + (duesByDay.get(k) ?? []).filter((d) => !d.settled).reduce((b, d) => b + (d.amount ?? 0), 0),
-    0
-  );
+  const monthTxns = cells.reduce((a, k) => a + (byDay.get(k)?.txns ?? 0), 0);
+  const thisMonth = monthKey(new Date());
+
+  // Bills by calendar month: those falling due in the month on screen, and any
+  // from earlier months that are still unpaid.
+  const sum = (list: DueDate[]) => list.reduce((a, d) => a + (d.amount ?? 0), 0);
+  const dueHere = dues.filter((d) => d.day.startsWith(month));
+  const openHere = dueHere.filter((d) => !d.settled);
+  const settledHere = dueHere.length - openHere.length;
+  const openBefore = dues.filter((d) => d.day.slice(0, 7) < month && !d.settled);
+  const openByMonth = [...new Set(openBefore.map((d) => d.day.slice(0, 7)))]
+    .sort()
+    .reverse()
+    .map((key) => {
+      const open = openBefore.filter((d) => d.day.startsWith(key));
+      return `${monthTitle(key)}: ${open.length} unpaid · ${inr(sum(open))}`;
+    });
 
   const busiest = cells.reduce<{ key: string; v: number } | null>((best, k) => {
     const v = byDay.get(k)?.debits ?? 0;
@@ -150,7 +166,8 @@ export default function SpendCalendar({
     const r = el.getBoundingClientRect();
     const half = 158;
     const x = Math.min(Math.max(r.left + r.width / 2, half + 10), window.innerWidth - half - 10);
-    const below = r.top < 250;
+    // Open toward whichever side of the screen has more room.
+    const below = r.top + r.height / 2 < window.innerHeight / 2;
     return { key, x, y: below ? r.bottom : r.top, below };
   }
 
@@ -166,7 +183,9 @@ export default function SpendCalendar({
   }
 
   function tipContent(key: string) {
-    const { spendCards, dueList, spend, txns, dueTotal, minTotal, away } = dayBlocks(key);
+    const { spendCards, dueList, spend, txns, dueTotal, away } = dayBlocks(key);
+    const openList = dueList.filter((d) => !d.settled);
+    const openMin = openList.reduce((a, d) => a + (d.minDue ?? 0), 0);
     return (
       <div>
         <p className="cal-tip-date">{longDate(key)}</p>
@@ -195,41 +214,49 @@ export default function SpendCalendar({
             </ul>
           </>
         ) : (
-          <p className="cal-tip-none">No spend on this day</p>
+          <p className="cal-tip-none">No spend on this date</p>
         )}
 
         {dueList.length > 0 && (
           <div className="cal-tip-due">
-            <p className={`cal-tip-duehead ${dueList.every((d) => d.settled) ? "cal-tip-settled" : ""}`}>
+            <p className={`cal-tip-duehead ${openList.length === 0 ? "cal-tip-settled" : ""}`}>
               <span className="cal-tip-duedot" />
-              {dueList.filter((d) => !d.settled).length === 0
-                ? `${dueList.length} bill${dueList.length === 1 ? "" : "s"}, all settled`
-                : `${dueList.filter((d) => !d.settled).length} of ${dueList.length} still to pay`}
+              {openList.length === 0
+                ? `${dueList.length} bill${dueList.length === 1 ? "" : "s"} settled`
+                : `${openList.length} of ${dueList.length} still to pay`}
               <span className="cal-tip-sub">
                 {away > 0 ? ` \u00b7 in ${away} day${away === 1 ? "" : "s"}` : away === 0 ? " \u00b7 today" : " \u00b7 already passed"}
               </span>
             </p>
             <p className="cal-tip-total">
-              {inr(dueTotal)} <span className="cal-tip-sub">total{minTotal > 0 ? ` \u00b7 min ${inr(minTotal)}` : ""}</span>
+              {openList.length === 0 ? (
+                <>
+                  {inr(dueTotal)} <span className="cal-tip-sub">settled</span>
+                </>
+              ) : (
+                <>
+                  {inr(sum(openList))}{" "}
+                  <span className="cal-tip-sub">
+                    to pay{openMin > 0 ? ` \u00b7 min ${inr(openMin)}` : ""}
+                  </span>
+                </>
+              )}
             </p>
             {[false, true].map((group) => {
               const rows = dueList.filter((d) => d.settled === group);
               if (rows.length === 0) return null;
               return (
                 <div key={String(group)}>
-                  <p className="cal-tip-group">{group ? "Settled" : "To settle"}</p>
+                  <p className={`cal-tip-group ${group ? "is-settled" : "is-due"}`}>{group ? "Settled" : "To settle"}</p>
                   <ul className="cal-tip-list">
                     {rows.map((d, i) => (
                       <li key={`${d.id}-${i}`} className={group ? "cal-tip-done" : ""}>
                         <span className="cal-tip-dot" style={{ background: bankById(d.bankId).color }} />
                         <span className="cal-tip-name">
-                          {group ? "\u2713 " : ""}
                           {d.cardLabel} <span className="cal-tip-sub">•••• {d.last4 ?? "????"}</span>
                         </span>
                         <span className="cal-tip-amt">{d.amount != null ? inr(d.amount) : "\u2014"}</span>
-                        <span className="cal-tip-sub">
-                          {d.settled ? "settled" : `min ${d.minDue != null ? inr(d.minDue) : "\u2014"}`}
-                        </span>
+                        {!d.settled && d.minDue != null && <span className="cal-tip-sub">min {inr(d.minDue)}</span>}
                       </li>
                     ))}
                   </ul>
@@ -244,34 +271,85 @@ export default function SpendCalendar({
   }
 
   const detail = detailKey ? dayBlocks(detailKey) : null;
+  const detailOpen = detail ? detail.dueList.filter((d) => !d.settled) : [];
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <button
-          onClick={() => {
-            setPicked(months[Math.max(0, index - 1)]);
-            setSelected(null);
-          }}
-          disabled={index <= 0}
-          aria-label="Previous month"
-          className="rounded-md border border-line px-2 py-1 text-xs text-ink2 hover:border-muted disabled:opacity-30"
-        >
-          ‹
-        </button>
-        <span className="text-sm font-medium">{label}</span>
-        <button
-          onClick={() => {
-            setPicked(months[Math.min(months.length - 1, index + 1)]);
-            setSelected(null);
-          }}
-          disabled={index >= months.length - 1}
-          aria-label="Next month"
-          className="rounded-md border border-line px-2 py-1 text-xs text-ink2 hover:border-muted disabled:opacity-30"
-        >
-          ›
-        </button>
-        <span className="ml-auto text-sm tabular text-ink2">{inr(monthSpend)}</span>
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => {
+                setPicked(months[Math.max(0, index - 1)]);
+                setSelected(null);
+              }}
+              disabled={index <= 0}
+              aria-label="Previous month"
+              className="cal-nav"
+            >
+              ‹
+            </button>
+            <span className="px-1 text-sm font-medium">{label}</span>
+            <button
+              onClick={() => {
+                setPicked(months[Math.min(months.length - 1, index + 1)]);
+                setSelected(null);
+              }}
+              disabled={index >= months.length - 1}
+              aria-label="Next month"
+              className="cal-nav"
+            >
+              ›
+            </button>
+            <button
+              onClick={() => {
+                setPicked(thisMonth);
+                setSelected(null);
+              }}
+              disabled={month === thisMonth}
+              className="cal-today"
+            >
+              Today
+            </button>
+          </div>
+          <p className="mt-1.5 text-[10.5px] text-muted">
+            <span className="uppercase tracking-wider">Calendar month</span>
+            {statementMonth ? ` · ${monthTitle(statementMonth)} statements` : " · every statement"}
+          </p>
+        </div>
+
+        <dl className="cal-stats">
+          <div>
+            <dt>Spent</dt>
+            <dd className="tabular text-ink">{inr(monthSpend)}</dd>
+            <dd className="cal-sub tabular text-muted">
+              {monthTxns} transaction{monthTxns === 1 ? "" : "s"}
+            </dd>
+          </div>
+          <div className="hint" data-hint={openByMonth.length ? openByMonth.join("\n") : "Every bill from earlier months is settled"}>
+            <dt>Bills</dt>
+            <dd className="tabular">
+              {openHere.length > 0 && (
+                <span className="text-warn">
+                  {openHere.length} due · {inr(sum(openHere))}
+                </span>
+              )}
+              {openHere.length > 0 && settledHere > 0 && <span className="cal-sep text-muted"> · </span>}
+              {settledHere > 0 && <span className="cal-settled-seg text-good">{settledHere} settled</span>}
+              {dueHere.length === 0 && <span className="text-ink">No bills</span>}
+            </dd>
+            <dd className="cal-sub text-muted">
+              Earlier months:{" "}
+              {openBefore.length ? (
+                <span className="text-warn tabular">
+                  {openBefore.length} unpaid · {inr(sum(openBefore))}
+                </span>
+              ) : (
+                <span className="text-good">all settled</span>
+              )}
+            </dd>
+          </div>
+        </dl>
       </div>
 
       <div className="grid grid-cols-7 gap-1 text-center">
@@ -299,13 +377,15 @@ export default function SpendCalendar({
               onBlur={() => setHover(null)}
               onClick={() => setSelected(isSelected ? null : key)}
               aria-label={`${longDate(key)}${spend > 0 ? `, ${inr(spend)} spent` : ""}${
-                dueList.length ? `, ${dueList.length} payment due` : ""
+                dueList.length
+                  ? `, ${dueList.filter((x) => !x.settled).length} of ${dueList.length} bill${dueList.length === 1 ? "" : "s"} due`
+                  : ""
               }`}
               className={`cal-cell relative flex aspect-square items-center justify-center rounded-md border text-[11px] tabular ${
                 isSelected ? "border-accent" : isToday ? "border-muted" : "border-line"
               } ${lv ? "text-white" : "text-muted"}`}
               style={{
-                background: lv ? `color-mix(in srgb, ${t.series[0]} ${LEVELS[lv] * 100}%, transparent)` : "transparent",
+                background: lv ? `color-mix(in srgb, ${t.series[0]} ${LEVELS[lv] * 100}%, var(--color-surface))` : "var(--color-surface)",
               }}
             >
               {i + 1}
@@ -328,14 +408,18 @@ export default function SpendCalendar({
               })()}
               {dueList.length > 0 &&
                 (() => {
+                  // One badge per date. It counts what is still due; a green arc
+                  // around it shows how much of that date is already settled.
                   const open = dueList.filter((x) => !x.settled);
                   const allSettled = open.length === 0;
+                  const part = !allSettled && open.length < dueList.length;
                   return (
                     <span
-                      className={`cal-due-count ${allSettled ? "cal-due-settled" : upcoming ? "cal-due-live" : ""}`}
+                      className={`cal-due-count ${allSettled ? "cal-due-settled" : part ? "cal-due-part" : upcoming ? "cal-due-live" : ""}`}
+                      style={part ? ({ "--done": (dueList.length - open.length) / dueList.length } as React.CSSProperties) : undefined}
                       aria-hidden
                     >
-                      {allSettled ? "✓" : open.length}
+                      {allSettled ? dueList.length : open.length}
                     </span>
                   );
                 })()}
@@ -364,7 +448,7 @@ export default function SpendCalendar({
             <span
               key={i}
               className="h-3 w-3 rounded-sm border border-line"
-              style={{ background: l ? `color-mix(in srgb, ${t.series[0]} ${l * 100}%, transparent)` : "transparent" }}
+              style={{ background: l ? `color-mix(in srgb, ${t.series[0]} ${l * 100}%, var(--color-surface))` : "var(--color-surface)" }}
             />
           ))}
           More
@@ -372,18 +456,26 @@ export default function SpendCalendar({
         <span className="flex items-center gap-1.5">
           <span className="cal-legend-chip cal-due-count" aria-hidden>1</span>
           Bills due
-          <span className="cal-legend-chip cal-due-count cal-due-settled ml-2" aria-hidden>✓</span>
-          all settled
+          <span
+            className="cal-legend-chip cal-due-count cal-due-part ml-2"
+            style={{ "--done": 0.5 } as React.CSSProperties}
+            aria-hidden
+          >
+            1
+          </span>
+          Part settled
+          <span className="cal-legend-chip cal-due-count cal-due-settled ml-2" aria-hidden>1</span>
+          Settled
         </span>
-        <span className="ml-auto hidden sm:inline">Hover a day for the breakdown, click to pin it</span>
-        <span className="ml-auto sm:hidden">Tap a day for the breakdown</span>
+        <span className="ml-auto hidden sm:inline">Hover a date for the breakdown, click to pin it</span>
+        <span className="ml-auto sm:hidden">Tap a date for the breakdown</span>
       </div>
 
       {detailKey && detail && (
         <div className="rise mt-3 rounded-lg border border-line bg-surface2 p-3 text-sm">
           <p className="font-medium">{longDate(detailKey)}</p>
           {detail.spendCards.length === 0 && detail.dueList.length === 0 && (
-            <p className="mt-1 text-xs text-muted">Nothing recorded on this day.</p>
+            <p className="mt-1 text-xs text-muted">Nothing recorded on this date.</p>
           )}
           {detail.spendCards.length > 0 && (
             <ul className="mt-2 space-y-1 text-xs">
@@ -401,14 +493,25 @@ export default function SpendCalendar({
           {detail.dueList.length > 0 && (
             <>
               <p className="mt-3 border-t border-line pt-2 text-xs font-medium">
-                <span className={detail.dueList.some((d) => !d.settled) ? "text-warn" : "text-good"}>
-                  {detail.dueList.filter((d) => d.settled).length} of {detail.dueList.length} bill
-                  {detail.dueList.length === 1 ? "" : "s"} settled
+                {detailOpen.length > 0 ? (
+                  <span className="text-warn">
+                    {detailOpen.length} of {detail.dueList.length} still to pay
+                  </span>
+                ) : (
+                  <span className="text-good">
+                    {detail.dueList.length} bill{detail.dueList.length === 1 ? "" : "s"} settled
+                  </span>
+                )}
+                <span className="tabular text-ink2">
+                  {" "}
+                  · {inr(detailOpen.length > 0 ? sum(detailOpen) : detail.dueTotal)}
                 </span>
-                <span className="tabular text-ink2"> · {inr(detail.dueTotal)}</span>
+                {detailOpen.length > 0 && detailOpen.length < detail.dueList.length && (
+                  <span className="text-good"> · {detail.dueList.length - detailOpen.length} settled</span>
+                )}
               </p>
               <ul className="mt-1.5 space-y-1 text-xs">
-                {detail.dueList.map((d, i) => (
+                {[...detail.dueList].sort((a, b) => Number(a.settled) - Number(b.settled)).map((d, i) => (
                   <li key={`${d.id}-${i}`} className="flex items-center gap-2">
                     <span
                       className={`h-2 w-2 shrink-0 rounded-full ${d.settled ? "bg-good" : "bg-warn"}`}
@@ -437,7 +540,7 @@ export default function SpendCalendar({
                         className={`shrink-0 whitespace-nowrap rounded-md border px-2 py-0.5 text-[10.5px] transition-colors disabled:opacity-40 ${
                           d.settled
                             ? "border-line text-muted hover:border-muted hover:text-ink"
-                            : "border-accent/50 text-accent hover:bg-accent/10"
+                            : "border-good/50 text-good hover:bg-good/10"
                         }`}
                       >
                         {busy === d.id ? "..." : d.settled ? "Mark as unsettled" : "Mark as settled"}
@@ -453,16 +556,20 @@ export default function SpendCalendar({
 
       <div className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
         <div className="rounded-lg border border-line bg-surface2 p-3">
-          <p className="text-muted">Busiest day</p>
-          <p className="mt-0.5 tabular">{busiest ? `${Number(busiest.key.slice(-2))} · ${inr(busiest.v)}` : "n/a"}</p>
+          <p className="text-muted">Highest spend date</p>
+          <p className="mt-0.5 tabular">
+            {busiest
+              ? `${new Date(`${busiest.key}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · ${inr(busiest.v)}`
+              : "n/a"}
+          </p>
         </div>
         <div className="rounded-lg border border-line bg-surface2 p-3">
-          <p className="text-muted">Days with spend</p>
+          <p className="text-muted">Dates with spend</p>
           <p className="mt-0.5 tabular">{activeDays}</p>
         </div>
         <div className="rounded-lg border border-line bg-surface2 p-3">
-          <p className="text-muted">Still to pay this month</p>
-          <p className="mt-0.5 tabular">{monthDue > 0 ? inr(monthDue) : "all settled"}</p>
+          <p className="text-muted">Average per spend date</p>
+          <p className="mt-0.5 tabular">{activeDays ? inr(monthSpend / activeDays) : "n/a"}</p>
         </div>
       </div>
     </div>

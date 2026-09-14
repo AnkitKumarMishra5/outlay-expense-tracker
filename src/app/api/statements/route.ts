@@ -87,13 +87,13 @@ export async function POST(req: NextRequest) {
   await c.tx(async (q) => {
     await q(
       `INSERT INTO statements (id, user_id, card_id, period_start, period_end, statement_date, due_date,
-         total_due, min_due, total_debits, total_credits, stated_debits, stated_credits,
+         total_due, min_due, total_debits, total_credits, stated_debits, stated_credits, previous_balance,
          txn_count, checks_json, paid_at, filename, parser, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
       [
         stmtId, userId, body.cardId, s.periodStart ?? null, s.periodEnd ?? null, s.statementDate ?? null,
         s.dueDate ?? null, s.totalDue ?? null, s.minDue ?? null, sum("debit"), sum("credit"),
-        s.statedDebits ?? null, s.statedCredits ?? null,
+        s.statedDebits ?? null, s.statedCredits ?? null, s.previousBalance ?? null,
         txns.length, JSON.stringify(body.checks ?? []), body.paid ? ts : null,
         String(body.filename ?? "").slice(0, 120),
         "heuristic", ts,
@@ -101,10 +101,11 @@ export async function POST(req: NextRequest) {
     );
     for (const t of txns) {
       await q(
-        `INSERT INTO transactions (id, user_id, statement_id, card_id, txn_date, description, amount, type, category, is_fee, is_international, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        `INSERT INTO transactions (id, user_id, statement_id, card_id, txn_date, txn_time, description, amount, type, category, is_fee, is_international, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
-          uid(), userId, stmtId, body.cardId, t.date, t.description.slice(0, 200), t.amount, t.type,
+          uid(), userId, stmtId, body.cardId, t.date, t.time && /^\d{2}:\d{2}$/.test(t.time) ? t.time : null,
+          t.description.slice(0, 200), t.amount, t.type,
           t.category ?? "Other", t.isFee ? 1 : 0, t.isInternational ? 1 : 0, ts,
         ]
       );
