@@ -58,6 +58,13 @@ const MONEY_RE = /((?:\d{1,3}(?:,\d{2,3})*|\d+)\.\d{2})\s*(credit|debit|cr|dr|c|
  */
 const TRAILING_COLUMN_RE = /\bAMOUNT\b.*\b(?:CASHBACK|REWARDS?|POINTS)\b/i;
 
+/**
+ * A date column printed after the amount. IndusInd sets its "Statement Date"
+ * cell on the same line as the first purchase, so the row arrives as
+ * "BOOKMYSHOW  CINEMA  5  508.06 DR  15/09/2026" and the amount is no longer last.
+ */
+const TRAILING_DATE_RE = /(?:\s{2,}\d{2}[\/\-.]\d{2}[\/\-.]\d{2,4})+\s*$/;
+
 function lastAmount(rest: string, trailingColumn = false) {
   MONEY_RE.lastIndex = 0;
   if (trailingColumn) {
@@ -123,7 +130,7 @@ export function heuristicParse(text: string, layout?: LayoutRow[], rules: Catego
       if (/\bAMOUNT\b/i.test(line)) trailingColumn = TRAILING_COLUMN_RE.test(line);
       continue;
     }
-    const rest = head.rest;
+    const rest = head.rest.replace(TRAILING_DATE_RE, "");
     const am = lastAmount(rest, trailingColumn);
     if (!am) continue;
     const date = head.date;
@@ -131,6 +138,9 @@ export function heuristicParse(text: string, layout?: LayoutRow[], rules: Catego
     let description = cleanDescription(rest.slice(0, am.index));
     if (description.length < 3) {
       const above = (lines[i - 1] ?? "").trim();
+      // A bare date and figure under "Payment Due Date  Min.Amount Due" is the
+      // payment slip, not a spend.
+      if (SKIP_RE.test(above)) continue;
       if (above && !DATE_RE.test(above) && !/\d[\d,]*\.\d{2}/.test(above) && !SKIP_RE.test(above)) {
         description = cleanDescription(above.replace(/\s*\(ref#?\s*$/i, ""));
       }
@@ -154,7 +164,14 @@ export function heuristicParse(text: string, layout?: LayoutRow[], rules: Catego
       isInternational: INTL_RE.test(description),
     });
   }
-  return { parser: "heuristic", summary: extractSummary(text, layout), transactions };
+  const summary = extractSummary(text, layout);
+  // Whatever layout slipped it through, an unnamed charge dated the due date
+  // for exactly the minimum or total due is that due, not a purchase.
+  const isDue = (t: ParsedTxn) =>
+    t.description === "Unlabelled transaction" &&
+    t.date === summary.dueDate &&
+    (t.amount === summary.minDue || t.amount === Math.abs(summary.totalDue ?? NaN));
+  return { parser: "heuristic", summary, transactions: transactions.filter((t) => !isDue(t)) };
 }
 
 function findAmount(text: string, labels: RegExp): number | undefined {

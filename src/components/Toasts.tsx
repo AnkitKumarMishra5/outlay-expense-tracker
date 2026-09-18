@@ -73,18 +73,28 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
     () => false
   );
 
+  const live = useRef(new Map<string, number>());
+
   const remove = useCallback((id: number) => {
+    for (const [key, value] of live.current) if (value === id) live.current.delete(key);
     setToasts((list) => list.map((t) => (t.id === id ? { ...t, leaving: true } : t)));
     setTimeout(() => setToasts((list) => list.filter((t) => t.id !== id)), 280);
   }, []);
 
   const push = useCallback<ToastApi["push"]>(
     (message, options) => {
-      const id = ++seq.current;
       const duration = options?.duration ?? 4200;
       const tone = options?.tone ?? "info";
+      const detail = options?.detail;
+      // The same news twice (a double click, a retry that lands like the
+      // first try) replaces the toast already showing instead of stacking.
+      const key = `${tone}|${message}|${detail ?? ""}`;
+      const showing = live.current.get(key);
+      if (showing !== undefined) remove(showing);
+      const id = ++seq.current;
+      live.current.set(key, id);
       play(tone === "good" ? "success" : tone === "bad" ? "error" : "tick");
-      setToasts((list) => [...list.slice(-3), { id, message, detail: options?.detail, tone, duration, action: options?.action }]);
+      setToasts((list) => [...list.slice(-3), { id, message, detail, tone, duration, action: options?.action }]);
       setTimeout(() => remove(id), duration);
     },
     [remove]

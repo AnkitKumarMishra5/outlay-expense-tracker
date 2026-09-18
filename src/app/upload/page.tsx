@@ -17,6 +17,7 @@ import { getJson } from "@/lib/api";
 import { inr } from "@/lib/format";
 import { BANKS, bankById } from "@/lib/banks";
 import { runChecks, sameStatement } from "@/lib/checks";
+import { useLock } from "@/lib/useLock";
 import type { Detection } from "@/lib/detect";
 import { CardRow, Check, ParsedTxn, StatementSummary } from "@/lib/types";
 
@@ -116,6 +117,12 @@ export default function Upload() {
   const [aiEdits, setAiEdits] = useState<Record<string, string>>({});
   const outcomeRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
+  // The queue reads from here, not from the render it started in, so files
+  // dropped while it runs are picked up instead of waiting for another click.
+  const itemsRef = useRef<Item[]>([]);
+  itemsRef.current = items;
+  const reading = useRef(false);
+  const adding = useLock();
 
   useEffect(() => {
     if (aiOutcome) outcomeRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -165,7 +172,12 @@ export default function Upload() {
     const password = overrides?.password ?? item.password;
     if (password) form.set("password", password);
 
-    const res = await fetch("/api/statements/parse", { method: "POST", body: form });
+    let res: Response;
+    try {
+      res = await fetch("/api/statements/parse", { method: "POST", body: form });
+    } catch {
+      return { ...item, status: "failed", error: "The connection dropped while reading this file. Remove it and add it again to retry." };
+    }
     const data = await res.json().catch(() => null);
 
     if (!res.ok) {
@@ -212,17 +224,51 @@ export default function Upload() {
     return checks.some((c) => (c.id === "debit-tally" || c.id === "credit-tally") && c.status === "fail");
   }
 
-  async function runQueue() {
+  /**
+   * Read every waiting file, one at a time, until none are left. Each file is
+   * tried once per run, so one that still needs a password cannot loop.
+   */
+  async function runQueue(also: Status[] = ["needs-password"]) {
+    if (reading.current) return;
+    reading.current = true;
     setBusy(true);
-    const pending = items.filter((i) => i.status === "queued" || i.status === "needs-password");
-    for (const item of pending) {
-      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: "working" } : i)));
-      const current = items.find((i) => i.id === item.id) ?? item;
-      const done = await parseOne(current);
-      play(done.parsed ? "read" : "error");
-      setItems((prev) => prev.map((i) => (i.id === item.id ? done : i)));
+    const tried = new Set<string>();
+    try {
+      for (;;) {
+        const next = itemsRef.current.find(
+          (i) => !tried.has(i.id) && (i.status === "queued" || also.includes(i.status))
+        );
+        if (!next) break;
+        tried.add(next.id);
+        setItems((prev) => prev.map((i) => (i.id === next.id ? { ...i, status: "working" } : i)));
+        const done = await parseOne(next).catch(
+          (): Item => ({ ...next, status: "failed", error: "Could not read this file." })
+        );
+        play(done.parsed ? "read" : "error");
+        // Kept if the list was cleared or the file removed mid-read.
+        setItems((prev) => prev.map((i) => (i.id === next.id ? done : i)));
+        itemsRef.current = itemsRef.current.map((i) => (i.id === next.id ? done : i));
+      }
+    } finally {
+      reading.current = false;
+      setBusy(false);
     }
-    setBusy(false);
+  }
+
+  /**
+   * A password typed once is saved to the card and learned as a pattern, so
+   * the other locked statements from that bank usually open now too.
+   */
+  async function unlockWith(item: Item) {
+    if (reading.current) return;
+    setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, status: "working" } : x)));
+    const done = await parseOne(item, { password: item.password });
+    play(done.parsed ? "read" : "error");
+    setItems((prev) => prev.map((x) => (x.id === item.id ? done : x)));
+    itemsRef.current = itemsRef.current.map((x) => (x.id === item.id ? done : x));
+    if (done.status !== "needs-password" && itemsRef.current.some((x) => x.status === "needs-password")) {
+      await runQueue();
+    }
   }
 
   /** Fix one of the AI's picks by hand. Saves at once. */
@@ -243,7 +289,11 @@ export default function Upload() {
     return d.last4 ? `${bankById(d.bankId).name} ${d.last4}` : `${bankById(d.bankId).name} card`;
   }
 
-  async function createCardFor(item: Item) {
+  function createCardFor(item: Item) {
+    return adding.run(() => addCard(item), item.id);
+  }
+
+  async function addCard(item: Item) {
     const d = item.parsed?.detection;
     const bankId = item.newCardBank ?? d?.bankId ?? "other";
     const label = item.newCardLabel?.trim() || suggestedName(d) || `${bankById(bankId).name} card`;
@@ -251,15 +301,28 @@ export default function Upload() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ bankId, cardLabel: label, last4: d?.last4 ?? undefined }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      toast.push("Could not add card", { detail: data.error, tone: "bad" });
+    }).catch(() => null);
+    const data = await res?.json().catch(() => null);
+    if (!res?.ok || !data?.id) {
+      toast.push("Could not add card", { detail: data?.error ?? "Check your connection and try again.", tone: "bad" });
       return;
     }
     await loadCards();
-    setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, cardId: data.id, status: "ready" } : i)));
-    toast.push("Card added", { detail: label, tone: "good" });
+    // Other statements in the batch from this same card link to it now,
+    // rather than each asking for a card of its own.
+    const sameCard = (other: Item) => {
+      const o = other.parsed?.detection;
+      if (other.id === item.id || other.status !== "needs-card" || !o?.bankId || o.bankId !== bankId) return false;
+      return d?.last4 ? o.last4 === d.last4 : !o.last4;
+    };
+    const linked = itemsRef.current.filter(sameCard).length;
+    setItems((prev) =>
+      prev.map((i) => (i.id === item.id || sameCard(i) ? { ...i, cardId: data.id, status: "ready" } : i))
+    );
+    toast.push("Card added", {
+      detail: linked ? `${label}, with ${linked} more statement${linked === 1 ? "" : "s"} from it` : label,
+      tone: "good",
+    });
   }
 
   async function saveAll() {
@@ -298,7 +361,9 @@ export default function Upload() {
         });
       }
     }
-    if (saved) toast.push(`${saved} statement${saved === 1 ? "" : "s"} saved`, { tone: "good" });
+    // With a review to follow, its outcome speaks for the save as well, so
+    // the two do not land as a pair of toasts.
+    if (saved && !review.length) toast.push(`${saved} statement${saved === 1 ? "" : "s"} saved`, { tone: "good" });
     if (!review.length) {
       setBusy(false);
       if (saved) setTimeout(() => router.push("/statements"), 800);
@@ -344,7 +409,7 @@ export default function Upload() {
     if (!r.ok) {
       const error = body.error ?? "The AI could not review these statements right now. Your categories are unchanged, and this did not use up a review.";
       for (const x of review) patch(x.item.id, { status: "saved", aiTone: "warn", aiNote: error });
-      toast.push("AI review did not happen", { detail: error, tone: "warn", duration: 7000 });
+      toast.push("Saved, but the AI review did not happen", { detail: error, tone: "warn", duration: 7000 });
       setAiOutcome({ statements: [], error, retry: review });
       return;
     }
@@ -540,11 +605,8 @@ export default function Upload() {
                         className="w-56 rounded-lg border border-line bg-surface2 px-3 py-1.5 text-sm outline-none focus:border-accent"
                       />
                       <button
-                        onClick={async () => {
-                          setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, status: "working" } : x)));
-                          const done = await parseOne(item, { password: item.password });
-                          setItems((prev) => prev.map((x) => (x.id === item.id ? done : x)));
-                        }}
+                        onClick={() => unlockWith(item)}
+                        disabled={busy}
                         className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
                       >
                         Retry
@@ -702,9 +764,11 @@ export default function Upload() {
                           {!d?.bankId && item.newCardLabel?.trim() && (
                             <button
                               onClick={() => createCardFor(item)}
-                              className="rounded-lg border border-accent bg-accentSoft px-2.5 py-1 text-xs text-accent"
+                              disabled={adding.isPending(item.id)}
+                              aria-busy={adding.isPending(item.id)}
+                              className="rounded-lg border border-accent bg-accentSoft px-2.5 py-1 text-xs text-accent disabled:opacity-60"
                             >
-                              Add it
+                              {adding.isPending(item.id) ? <><span className="spinner mr-1.5" />Adding…</> : "Add it"}
                             </button>
                           )}
                           {d?.bankId && (
@@ -749,10 +813,11 @@ export default function Upload() {
                           />
                           <button
                             onClick={() => createCardFor(item)}
-                            disabled={!(item.newCardLabel ?? suggestedName(d)).trim()}
+                            disabled={adding.isPending(item.id) || !(item.newCardLabel ?? suggestedName(d)).trim()}
+                            aria-busy={adding.isPending(item.id)}
                             className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-40"
                           >
-                            Add this card
+                            {adding.isPending(item.id) ? <><span className="spinner mr-1.5" />Adding…</> : "Add this card"}
                           </button>
                           <span className="text-xs text-muted">or</span>
                           <button
@@ -821,7 +886,7 @@ export default function Upload() {
 
           <div className="mt-4 flex flex-wrap gap-2">
             <button
-              onClick={runQueue}
+              onClick={() => runQueue()}
               disabled={busy || !canParse}
               className={`rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 ${busy ? "btn-busy disabled:opacity-90" : ""}`}
             >

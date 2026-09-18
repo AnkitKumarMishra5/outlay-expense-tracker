@@ -8,6 +8,7 @@ import AiOverlay, { BotMark, REVIEW_STAGES } from "./AiOverlay";
 import { useToast } from "./Toasts";
 import { inr, monthTitle } from "@/lib/format";
 import { play } from "@/lib/sound";
+import { useLock } from "@/lib/useLock";
 import type { AiProposal } from "@/lib/aiSweep";
 
 interface AiState {
@@ -41,6 +42,8 @@ export default function AiSweep({ onApplied }: { onApplied: () => void }) {
   const [merchants, setMerchants] = useState<string[]>([]);
   const [reviewed, setReviewed] = useState(0);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
+  // A review spends one of the month's AI allowance, so a double click must not start two.
+  const lock = useLock();
 
   const loadState = useCallback(() => {
     fetch("/api/transactions/recategorize")
@@ -90,7 +93,11 @@ export default function AiSweep({ onApplied }: { onApplied: () => void }) {
 
   const scopeLabel = (m: string | null) => (m ? `the ${monthTitle(m)} statement` : "every statement");
 
-  async function run(scope: string | null) {
+  function run(scope: string | null) {
+    return lock.run(() => runNow(scope), "run");
+  }
+
+  async function runNow(scope: string | null) {
     setOpen(false);
     setRan(scope);
     setBusy(true);
@@ -134,7 +141,11 @@ export default function AiSweep({ onApplied }: { onApplied: () => void }) {
     play("sparkle");
   }
 
-  async function apply() {
+  function apply() {
+    return lock.run(applyNow, "apply");
+  }
+
+  async function applyNow() {
     if (!proposals) return;
     const changes = proposals
       .filter((p) => decisions[p.id]?.keep && decisions[p.id].category !== p.from)
@@ -226,7 +237,7 @@ export default function AiSweep({ onApplied }: { onApplied: () => void }) {
               </span>
               <span className="sweep-scope-n tabular">{counts.all !== undefined ? `${counts.all} spends` : ""}</span>
             </button>
-            <button type="button" onClick={() => run(month)} className="sweep-go" disabled={months === null}>
+            <button type="button" onClick={() => run(month)} className="sweep-go" disabled={months === null || busy}>
               Start review
             </button>
             <p className="sweep-pop-foot">

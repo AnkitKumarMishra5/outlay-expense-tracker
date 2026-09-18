@@ -6,6 +6,7 @@ import { useToast } from "./Toasts";
 import { SPEND_CATEGORIES } from "@/lib/categories";
 import { categoryColor, useChartTokens } from "@/lib/chartTokens";
 import { play } from "@/lib/sound";
+import { useLock } from "@/lib/useLock";
 import { monthTitle } from "@/lib/format";
 
 interface Rule {
@@ -21,6 +22,7 @@ interface Rule {
  */
 export default function CategoryRules() {
   const toast = useToast();
+  const lock = useLock();
   const tokens = useChartTokens();
   const [rules, setRules] = useState<Rule[] | null>(null);
   const [open, setOpen] = useState(false);
@@ -82,8 +84,12 @@ export default function CategoryRules() {
     };
   }, [picking, month]);
 
-  async function add(e: React.FormEvent) {
+  function add(e: React.FormEvent) {
     e.preventDefault();
+    return lock.run(addNow, "add");
+  }
+
+  async function addNow() {
     const word = keyword.trim();
     if (word.length < 2) {
       toast.push("Give the keyword at least two characters.", { tone: "bad" });
@@ -106,7 +112,11 @@ export default function CategoryRules() {
     load();
   }
 
-  async function remove(rule: Rule) {
+  function remove(rule: Rule) {
+    return lock.run(() => removeNow(rule), rule.id);
+  }
+
+  async function removeNow(rule: Rule) {
     const res = await fetch(`/api/category-rules?id=${encodeURIComponent(rule.id)}`, { method: "DELETE" }).catch(() => null);
     if (!res?.ok) {
       toast.push("That rule could not be removed.", { tone: "bad" });
@@ -240,7 +250,7 @@ export default function CategoryRules() {
                     →
                   </span>
                   <span className="rules-cat">{r.category}</span>
-                  <button onClick={() => remove(r)} aria-label={`Remove the rule for ${r.keyword}`} className="rules-del">
+                  <button onClick={() => remove(r)} disabled={lock.isPending(r.id)} aria-label={`Remove the rule for ${r.keyword}`} className="rules-del">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden>
                       <path d="M5 5l14 14M19 5L5 19" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
                     </svg>

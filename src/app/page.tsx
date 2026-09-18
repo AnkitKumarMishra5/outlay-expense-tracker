@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { setCardholder } from "@/lib/cardholder";
+import { DemoCardholder } from "@/lib/cardholder";
 import { SAMPLE_IDENTITY } from "@/lib/passwords";
 import DashboardView from "@/components/DashboardView";
 import type { CardStat } from "@/components/CardRail";
@@ -33,8 +33,6 @@ const STEPS = [
     body: "Spend by card, category and month. A calendar carrying both daily spend and every payment due. Fees itemised, because those are the ones worth arguing about.",
   },
 ];
-
-setCardholder(SAMPLE_IDENTITY.name);
 
 export default function Landing() {
   // Someone already signed in does not need to be asked to sign in again.
@@ -164,6 +162,7 @@ export default function Landing() {
             </div>
 
             <div className="p-4 sm:p-6">
+              <DemoCardholder name={SAMPLE_IDENTITY.name}>
               <DashboardView
                 title="Dashboard"
                 demo
@@ -186,6 +185,7 @@ export default function Landing() {
                 }}
                 onSettle={(id, settled) => setSettledOverride((prev) => ({ ...prev, [id]: settled }))}
               />
+              </DemoCardholder>
             </div>
           </div>
           <p className="mt-3 text-center text-xs text-muted">

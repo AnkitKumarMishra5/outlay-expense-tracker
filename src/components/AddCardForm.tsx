@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { BANKS } from "@/lib/banks";
+import { useLock } from "@/lib/useLock";
 import BankBadge from "./BankBadge";
 
 export default function AddCardForm({ onAdded }: { onAdded: () => void }) {
@@ -11,8 +12,9 @@ export default function AddCardForm({ onAdded }: { onAdded: () => void }) {
   const [first4, setFirst4] = useState("");
   const [useCustomPw, setUseCustomPw] = useState(false);
   const [customPassword, setCustomPassword] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const lock = useLock();
+  const busy = lock.isPending();
 
   async function submit() {
     if (!bankId || !cardLabel.trim()) {
@@ -27,8 +29,8 @@ export default function AddCardForm({ onAdded }: { onAdded: () => void }) {
       setError("Last 4 digits must be exactly 4 digits.");
       return;
     }
-    setBusy(true);
     setError("");
+    await lock.run(async () => {
     const res = await fetch("/api/cards", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -39,18 +41,19 @@ export default function AddCardForm({ onAdded }: { onAdded: () => void }) {
         first4: first4 || undefined,
         customPassword: useCustomPw ? customPassword : undefined,
       }),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setError((await res.json()).error ?? "Could not add the card.");
+    }).catch(() => null);
+    if (!res?.ok) {
+      setError((await res?.json().catch(() => null))?.error ?? "Could not add the card. Check your connection and try again.");
       return;
     }
     setBankId(null);
     setCardLabel("");
     setLast4("");
+    setFirst4("");
     setCustomPassword("");
     setUseCustomPw(false);
     onAdded();
+    });
   }
 
   const input =
@@ -126,9 +129,10 @@ export default function AddCardForm({ onAdded }: { onAdded: () => void }) {
       <button
         onClick={submit}
         disabled={busy}
+        aria-busy={busy}
         className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
       >
-        {busy ? "Adding…" : "Add card"}
+        {busy ? <><span className="spinner mr-2" />Adding…</> : "Add card"}
       </button>
     </div>
   );

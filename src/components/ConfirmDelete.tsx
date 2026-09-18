@@ -47,11 +47,12 @@ export default function ConfirmDelete({
   }, [onCancel]);
 
   async function remove() {
+    if (busy) return;
     setBusy(true);
     setError("");
-    const res = await fetch(`/api/cards/${card.id}`, { method: "DELETE" });
+    const res = await fetch(`/api/cards/${card.id}`, { method: "DELETE" }).catch(() => null);
     setBusy(false);
-    if (!res.ok) {
+    if (!res?.ok) {
       setError("Could not remove that card.");
       return;
     }

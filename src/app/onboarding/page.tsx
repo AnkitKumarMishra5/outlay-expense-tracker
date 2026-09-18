@@ -7,6 +7,7 @@ import BankBadge from "@/components/BankBadge";
 import { CardRow } from "@/lib/types";
 import Logo from "@/components/Logo";
 import { APP_BYLINE, APP_NAME } from "@/lib/developer";
+import { refreshCardholder } from "@/lib/cardholder";
 
 export default function Onboarding() {
   const router = useRouter();
@@ -40,6 +41,7 @@ export default function Onboarding() {
       setError((await res.json()).error ?? "Could not save.");
       return;
     }
+    refreshCardholder();
     setStep(2);
   }
 

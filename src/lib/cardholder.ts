@@ -1,38 +1,54 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { createContext, createElement, useContext, useSyncExternalStore, type ReactNode } from "react";
 
+// The signed-in person's own name, and nothing else. The public demo's
+// invented holder lives in DemoCardholder below, scoped to the demo's own
+// subtree, so it can never leak onto a real account's cards.
 let holder: string | null = null;
-let asked = false;
+let inFlight = false;
+let resolved = false;
 const listeners = new Set<() => void>();
 
 function emit() {
   listeners.forEach((l) => l());
 }
 
-/** Set the name embossed on every card face. The demo uses this for its invented holder. */
-export function setCardholder(name: string | null) {
-  asked = true;
-  holder = name?.trim() ? name.trim() : null;
-  emit();
+function hasSession(): boolean {
+  const match = document.cookie.match(/(?:^|;\s*)outlay_expires_at=(\d+)/);
+  return match ? Number(match[1]) > Date.now() : false;
+}
+
+function load() {
+  if (inFlight || typeof window === "undefined" || !hasSession()) return;
+  inFlight = true;
+  fetch("/api/profile")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      const name = d?.hasProfile && typeof d.name === "string" ? d.name.trim() : "";
+      holder = name || null;
+      // A new account has no profile until onboarding saves one; leave the
+      // door open so the next card to mount asks again instead of staying blank.
+      resolved = Boolean(name);
+      emit();
+    })
+    .catch(() => {})
+    .finally(() => {
+      inFlight = false;
+    });
+}
+
+/** Re-read the name after the profile changes (onboarding, settings). */
+export function refreshCardholder() {
+  resolved = false;
+  load();
 }
 
 function subscribe(l: () => void) {
   listeners.add(l);
   // Fetched once for the whole session rather than threaded through five
-  // components. On a public page this 401s and the cards simply go unnamed.
-  if (!asked && typeof window !== "undefined") {
-    asked = true;
-    fetch("/api/profile")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.hasProfile && typeof d.name === "string") {
-          holder = d.name.trim() || null;
-          emit();
-        }
-      })
-      .catch(() => {});
-  }
+  // components. Signed out, nothing is asked and the cards go unnamed.
+  if (!resolved) load();
   return () => {
     listeners.delete(l);
   };
@@ -41,8 +57,17 @@ function subscribe(l: () => void) {
 const snapshot = () => holder;
 const serverSnapshot = () => null;
 
+const DemoName = createContext<string | null>(null);
+
+/** Names every card inside it with an invented holder. The public demo only. */
+export function DemoCardholder({ name, children }: { name: string; children: ReactNode }) {
+  return createElement(DemoName.Provider, { value: name }, children);
+}
+
 export function useCardholder(): string | null {
-  return useSyncExternalStore(subscribe, snapshot, serverSnapshot);
+  const demo = useContext(DemoName);
+  const own = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
+  return demo ?? own;
 }
 
 /**

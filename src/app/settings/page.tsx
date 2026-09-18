@@ -12,6 +12,8 @@ import ConfirmDelete from "@/components/ConfirmDelete";
 import { CardRow } from "@/lib/types";
 import { useToast } from "@/components/Toasts";
 import { getJson } from "@/lib/api";
+import { refreshCardholder } from "@/lib/cardholder";
+import { useLock } from "@/lib/useLock";
 
 export default function Settings() {
   const router = useRouter();
@@ -26,6 +28,7 @@ export default function Settings() {
   const [draftName, setDraftName] = useState("");
   const [draftDob, setDraftDob] = useState("");
   const [savingIdentity, setSavingIdentity] = useState(false);
+  const lock = useLock();
   const toast = useToast();
 
   const loadCards = useCallback(() => {
@@ -64,6 +67,7 @@ export default function Settings() {
       return;
     }
     setEditingIdentity(false);
+    refreshCardholder();
     toast.push("Statement identity updated", {
       detail: "New statements will use these. Cards already unlocked keep their saved password.",
       tone: "good",
@@ -73,17 +77,21 @@ export default function Settings() {
   useEffect(load, [loadCards]);
 
 
-  async function wipe() {
-    const res = await fetch("/api/reset", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: confirmText }),
-    });
-    if (res.ok) {
+  function wipe() {
+    return lock.run(async () => {
+      const res = await fetch("/api/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: confirmText }),
+      }).catch(() => null);
+      if (!res?.ok) {
+        toast.push("Could not wipe your data", { detail: "Nothing was deleted. Try again.", tone: "bad" });
+        return;
+      }
       play("delete");
       toast.push("All data wiped", { tone: "bad" });
       router.push("/onboarding");
-    }
+    }, "wipe");
   }
 
   return (
@@ -97,10 +105,13 @@ export default function Settings() {
           Statements, cards and profile on this account are encrypted with a key derived for it alone.
         </p>
         <button
-          onClick={async () => {
-            await fetch("/api/auth/logout", { method: "POST" });
-            window.location.replace("/login");
-          }}
+          onClick={() =>
+            lock.run(async () => {
+              await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+              window.location.replace("/login");
+            }, "logout")
+          }
+          disabled={lock.isPending("logout")}
           className="mt-3 rounded-lg border border-line px-3 py-1.5 text-sm text-ink2 hover:border-muted hover:text-ink"
         >
           Sign out
@@ -309,10 +320,11 @@ export default function Settings() {
           />
           <button
             onClick={wipe}
-            disabled={confirmText !== "DELETE EVERYTHING"}
+            disabled={confirmText !== "DELETE EVERYTHING" || lock.isPending("wipe")}
+            aria-busy={lock.isPending("wipe")}
             className="rounded-lg bg-bad px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
           >
-            Wipe all data
+            {lock.isPending("wipe") ? <><span className="spinner mr-2" />Wiping…</> : "Wipe all data"}
           </button>
         </div>
       </section>
