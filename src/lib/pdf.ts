@@ -25,7 +25,16 @@ export interface ExtractResult {
 
 type PdfJs = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 let pdfjsPromise: Promise<PdfJs> | null = null;
-const pdfjs = () => (pdfjsPromise ??= import("pdfjs-dist/legacy/build/pdf.mjs"));
+// In Node, pdf.js loads its worker with an import() of a path the build cannot
+// see, so the deployed function shipped without it and every PDF failed to open.
+// Importing the worker here gets it traced, and it registers itself on
+// globalThis.pdfjsWorker, which pdf.js checks before reaching for the file.
+const pdfjs = () =>
+  (pdfjsPromise ??= (async () => {
+    // @ts-expect-error pdfjs-dist ships no types for the worker build.
+    await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+    return import("pdfjs-dist/legacy/build/pdf.mjs");
+  })());
 
 async function tryOpen(data: Uint8Array, password?: string) {
   const lib = await pdfjs();

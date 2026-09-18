@@ -15,9 +15,10 @@ const LEADING_NOISE_RE = /^(.{0,10}?)(\d{2})[\/\-.](\d{2})[\/\-.](\d{2,4})\b/;
 
 /**
  * "19Jul 2026", "22 Jul 2026", "24 Aug 26", "24-Aug-26". HDFC runs the day into
- * the month name, SBI prints a two-digit year. A figure like "50.00" is never a year.
+ * the month name, SBI prints a two-digit year. A figure like "50.00" is never a year,
+ * but the comma in HDFC Pixel's "17Aug 2026,18:10" leads into a time, not a figure.
  */
-const NAMED_DATE_RE = /^(\d{1,2})[\s-]?([A-Za-z]{3,9})\.?,?[\s\-'\u2019]+(\d{4}|\d{2})\b(?![.,]\d)/;
+const NAMED_DATE_RE = /^(\d{1,2})[\s-]?([A-Za-z]{3,9})\.?,?[\s\-'\u2019]+(\d{4}|\d{2})\b(?!\.\d|,\d(?!\d?:\d))/;
 
 /** "Aug 24, 2026", month first. */
 const MONTH_FIRST_ROW_RE = /^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4}|\d{2})\b(?![.,]\d)/;
@@ -51,8 +52,18 @@ function rowStart(line: string): { rest: string; date: string | null } | null {
  */
 const MONEY_RE = /((?:\d{1,3}(?:,\d{2,3})*|\d+)\.\d{2})\s*(credit|debit|cr|dr|c|d)?(?![A-Za-z])\.?/gi;
 
-function lastAmount(rest: string) {
+/**
+ * A column printed after the amount: Axis's Flipkart card follows every row with
+ * "CASHBACK EARNED", so "4,420.00 Dr  331.00 Cr" ends on the cashback, not the charge.
+ */
+const TRAILING_COLUMN_RE = /\bAMOUNT\b.*\b(?:CASHBACK|REWARDS?|POINTS)\b/i;
+
+function lastAmount(rest: string, trailingColumn = false) {
   MONEY_RE.lastIndex = 0;
+  if (trailingColumn) {
+    const all = [...rest.matchAll(MONEY_RE)];
+    if (all.length >= 2) return all[all.length - 2] as RegExpExecArray;
+  }
   let chosen: RegExpExecArray | null = null;
   let m: RegExpExecArray | null;
   while ((m = MONEY_RE.exec(rest))) {
@@ -101,14 +112,19 @@ const SKIP_RE =
 export function heuristicParse(text: string, layout?: LayoutRow[], rules: CategoryRule[] = []): ParsedStatement {
   const transactions: ParsedTxn[] = [];
   const lines = text.split("\n");
+  let trailingColumn = false;
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     const line = raw.trim();
     if (!line || SKIP_RE.test(line)) continue;
     const head = rowStart(line);
-    if (!head) continue;
+    if (!head) {
+      // Each table header decides for the rows under it.
+      if (/\bAMOUNT\b/i.test(line)) trailingColumn = TRAILING_COLUMN_RE.test(line);
+      continue;
+    }
     const rest = head.rest;
-    const am = lastAmount(rest);
+    const am = lastAmount(rest, trailingColumn);
     if (!am) continue;
     const date = head.date;
     if (!date) continue;
@@ -125,7 +141,9 @@ export function heuristicParse(text: string, layout?: LayoutRow[], rules: Catego
     const marker = am[2]?.toLowerCase();
     const credit = marker?.startsWith("c") ?? false;
     const debit = marker?.startsWith("d") ?? false;
-    const type = credit || (!debit && CREDIT_RE.test(description)) ? "credit" : "debit";
+    // HDFC signs a credit "+₹8,065.89". A points column ("+45  ₹900.29") is not that.
+    const plus = /\+\s*₹?\s*$/.test(rest.slice(0, am.index));
+    const type = credit || (!debit && (plus || CREDIT_RE.test(description))) ? "credit" : "debit";
     transactions.push({
       date,
       description,
