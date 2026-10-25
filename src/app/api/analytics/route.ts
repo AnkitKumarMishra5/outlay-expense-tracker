@@ -103,10 +103,11 @@ export async function GET(req: NextRequest) {
        LEFT JOIN transactions t
          ON t.card_id = cards.id AND t.user_id = $1${joinWindow}
        LEFT JOIN LATERAL (
-         SELECT s.due_date, s.total_due
+         SELECT s.due_date, COALESCE(s.total_due, s.total_debits) AS total_due
          FROM statements s
          WHERE s.card_id = cards.id AND s.user_id = cards.user_id
-           AND s.paid_at IS NULL AND COALESCE(s.total_due, 0) > 0
+           -- A total that could not be read is unknown, not zero: the spends stand in.
+           AND s.paid_at IS NULL AND COALESCE(s.total_due, s.total_debits, 0) > 0
          -- The newest unpaid bill: its total already carries anything left on
          -- an older one, so that is what the card owes.
          ORDER BY s.due_date DESC
@@ -126,9 +127,9 @@ export async function GET(req: NextRequest) {
       joinArgs
     ),
     c.execute(
-      `SELECT s.id, s.card_id, s.due_date AS day, s.statement_date, s.statement_month, s.total_due AS amount, s.min_due AS min_due, s.paid_at,
+      `SELECT s.id, s.card_id, s.due_date AS day, s.statement_date, s.statement_month, COALESCE(s.total_due, s.total_debits) AS amount, s.min_due AS min_due, s.paid_at,
          s.total_debits, s.txn_count,
-         (s.paid_at IS NOT NULL OR COALESCE(s.total_due, 0) <= 0) AS settled,
+         (s.paid_at IS NOT NULL OR COALESCE(s.total_due, s.total_debits, 0) <= 0) AS settled,
          cards.card_label, cards.bank_id, cards.last4_enc
        FROM statements s JOIN cards ON cards.id = s.card_id
        WHERE s.user_id = $1 AND s.due_date IS NOT NULL${dueFilter}

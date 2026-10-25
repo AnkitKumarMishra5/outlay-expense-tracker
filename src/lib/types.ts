@@ -30,6 +30,8 @@ export interface Check {
   label: string;
   status: CheckStatus;
   detail: string;
+  /** Set from statements.reviewed_checks when shown, never saved in checks_json. */
+  reviewed?: boolean;
 }
 
 export interface ParsedStatement {
@@ -65,6 +67,7 @@ export interface StatementRow {
   txn_count: number;
   paid_at: string | null;
   checks_json: string;
+  reviewed_checks: string;
   filename: string;
   parser: string;
   created_at: string;

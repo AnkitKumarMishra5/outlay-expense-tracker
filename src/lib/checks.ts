@@ -33,6 +33,22 @@ export function sameStatement(a: StatementIdentity, b: StatementIdentity): boole
   return false;
 }
 
+/** Check id to the detail that was reviewed, so a finding that changes asks again. */
+export type ReviewedChecks = Record<string, string>;
+
+export function parseReviewed(json: string | null | undefined): ReviewedChecks {
+  try {
+    const v = JSON.parse(json || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+export function withReviewed(checks: Check[], reviewed: ReviewedChecks): Check[] {
+  return checks.map((c) => (c.status !== "pass" && reviewed[c.id] === c.detail ? { ...c, reviewed: true } : c));
+}
+
 /**
  * @param paidAt ISO timestamp when the bill was settled, when it has been.
  *   A settled bill is not overdue, so the due check reports that instead.

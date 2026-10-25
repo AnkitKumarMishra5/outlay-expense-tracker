@@ -152,7 +152,9 @@ export function heuristicParse(text: string, layout?: LayoutRow[], rules: Catego
     const credit = marker?.startsWith("c") ?? false;
     const debit = marker?.startsWith("d") ?? false;
     // HDFC signs a credit "+₹8,065.89". A points column ("+45  ₹900.29") is not that.
-    const plus = /\+\s*₹?\s*$/.test(rest.slice(0, am.index));
+    // Some fonts map the rupee glyph to a "C", so the sign arrives as "+ C 214.70".
+    const plus = /\+\s*(?:₹|C)?\s*$/.test(rest.slice(0, am.index));
+    if (plus) description = description.replace(/\s*\+$/, "") || "Unlabelled transaction";
     const type = credit || (!debit && (plus || CREDIT_RE.test(description))) ? "credit" : "debit";
     transactions.push({
       date,
@@ -249,6 +251,11 @@ function alignedCell(
   for (let i = 0; i < layout.length; i++) {
     const head = layout[i].cells.find((c) => label.test(c.text));
     if (!head) continue;
+    // A row of just a label and a figure: the figure below belongs to something else.
+    if (layout[i].cells.length === 2 && layout[i].cells[0] === head) {
+      const beside = layout[i].cells[1].text;
+      if (wanted(beside)) return beside;
+    }
     for (let j = i + 1; j < layout.length && j <= i + lookahead; j++) {
       if (layout[j].page !== layout[i].page) break;
       let best: { text: string; overlap: number } | null = null;
@@ -456,10 +463,12 @@ export function extractSummary(text: string, layout?: LayoutRow[]): StatementSum
   summary.dueDate = alignedDate(layout, /^(?:payment )?due date$/i) ?? summary.dueDate;
   summary.statementDate = alignedDate(layout, new RegExp(`^(?:${STATEMENT_DATE_LABEL})$`, "i")) ?? summary.statementDate;
   // "Opening Balance ₹ -804.00" or "0.18 CR": a minus or a Cr means the card was in credit.
+  // Some statements drop the leading zero, printing four paise in credit as ".04 CR".
+  const openingMoney = /(-)?\s*((?:\d{1,3}(?:,\d{2,3})*|\d+)?\.\d{2})(?:\s*(Cr)\b)?/i;
   const openingCell = layout?.length
-    ? alignedCell(layout, /^(?:opening|previous) balance$/i, (t) => CELL_MONEY.test(t))
+    ? alignedCell(layout, /^(?:opening|previous) balance$/i, (t) => openingMoney.test(t))
     : undefined;
-  const opening = openingCell?.match(/(-)?\s*((?:\d{1,3}(?:,\d{2,3})*|\d+)\.\d{2})(?:\s*(Cr)\b)?/i);
+  const opening = openingCell?.match(openingMoney);
   if (opening) summary.previousBalance = opening[1] || opening[3] ? -parseAmount(opening[2]) : parseAmount(opening[2]);
 
   // A period set in a grid, its two dates in the cell under the heading.
@@ -497,6 +506,11 @@ export function extractSummary(text: string, layout?: LayoutRow[]): StatementSum
   if (sum.previousBalance !== undefined) summary.previousBalance = sum.previousBalance;
   summary.totalDue ??= sum.totalDue;
 
+  // Some statements draw their due labels as images, leaving the account
+  // summary's "Total Outstanding" the only named total. Last resort only.
+  summary.totalDue ??= findAmount(text, /total outstanding/);
+  unlabelledDates(text, summary);
+
   // A credit limit is never a total. Any figure printed under a limit heading
   // is struck from the stated totals, whichever reader picked it up.
   const limits = limitFigures(text);
@@ -506,6 +520,51 @@ export function extractSummary(text: string, layout?: LayoutRow[]): StatementSum
   }
 
   return summary;
+}
+
+/**
+ * Dates printed without labels: a period in the masthead, and a row of two
+ * dates, statement then due ("21-10-2026  08-11-2026"), with the total and
+ * minimum due just above. Used only when nothing labelled was found.
+ */
+function unlabelledDates(text: string, summary: StatementSummary) {
+  const lines = text.split("\n");
+  const days = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / 86_400_000;
+  if (!summary.periodEnd && !summary.statementDate) {
+    for (const line of lines.slice(0, 12)) {
+      const p = line.match(PERIOD_NUMERIC);
+      if (!p) continue;
+      const start = toISO(p[1], p[2], p[3]);
+      const end = toISO(p[4], p[5], p[6]);
+      if (start && end && days(start, end) >= 20 && days(start, end) <= 70) {
+        summary.periodStart = start;
+        summary.periodEnd = end;
+      }
+      break;
+    }
+  }
+  if (summary.dueDate) return;
+  const close = summary.statementDate ?? summary.periodEnd;
+  if (!close) return;
+  for (let i = 0; i < lines.length; i++) {
+    const pair = lines[i].trim().match(/^(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})\s+(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})$/);
+    if (!pair) continue;
+    const first = toISO(pair[1], pair[2], pair[3]);
+    const second = toISO(pair[4], pair[5], pair[6]);
+    if (!first || !second || first !== close) continue;
+    const gap = days(first, second);
+    if (gap < 10 || gap > 30) continue;
+    summary.statementDate ??= first;
+    summary.dueDate = second;
+    for (const above of lines.slice(Math.max(0, i - 3), i).reverse()) {
+      const figures = amountsOn(above);
+      if (figures.length !== 2 || figures[0] < figures[1]) continue;
+      summary.totalDue ??= figures[0];
+      summary.minDue ??= figures[1];
+      break;
+    }
+    return;
+  }
 }
 
 const PERIOD_NUMERIC = /(\d{2})[\/\-.](\d{2})[\/\-.](\d{2,4})\s*(?:to|-|\u2013)\s*(\d{2})[\/\-.](\d{2})[\/\-.](\d{2,4})/i;
