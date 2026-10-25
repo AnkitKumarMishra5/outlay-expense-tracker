@@ -13,6 +13,7 @@ import CheckSummary from "@/components/CheckSummary";
 import SavedTxnTable, { SavedTxn } from "@/components/SavedTxnTable";
 import { inr } from "@/lib/format";
 import { Check, StatementRow } from "@/lib/types";
+import { parseReviewed, withReviewed } from "@/lib/checks";
 import CountUp from "@/components/CountUp";
 import { useToast } from "@/components/Toasts";
 import type { AiState } from "@/lib/aiQuota";
@@ -102,7 +103,20 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
     );
 
   const s = data.statement;
-  const checks: Check[] = JSON.parse(s.checks_json || "[]");
+  const checks = withReviewed(JSON.parse(s.checks_json || "[]") as Check[], parseReviewed(s.reviewed_checks));
+
+  async function review(check: Check, reviewed: boolean) {
+    const res = await fetch(`/api/statements/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ review: { checkId: check.id, reviewed } }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      const err = await res?.json().catch(() => null);
+      toast.push(err?.error ?? "Could not update this check", { tone: "bad" });
+    }
+    load();
+  }
 
   return (
     <div className="space-y-5">
@@ -177,7 +191,7 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
         <div className="mb-4 border-b border-line pb-4">
           <CheckSummary checks={checks} />
         </div>
-        <CheckList checks={checks} />
+        <CheckList checks={checks} onReview={review} />
       </div>
 
       <div className="card rise p-5" style={{ "--d": "300ms" } as React.CSSProperties}>

@@ -42,7 +42,7 @@ export const monthLabel = (ym: string) => {
 };
 
 export function isSettled(paidAt: string | null | undefined, totalDue: number | null | undefined): boolean {
-  return Boolean(paidAt) || totalDue == null || totalDue <= 0;
+  return Boolean(paidAt) || (totalDue != null && totalDue <= 0);
 }
 
 /**

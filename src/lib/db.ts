@@ -56,6 +56,7 @@ const SCHEMA = [
     statement_month TEXT,
     txn_count INTEGER NOT NULL DEFAULT 0,
     checks_json TEXT NOT NULL DEFAULT '[]',
+    reviewed_checks TEXT NOT NULL DEFAULT '{}',
     paid_at TEXT,
     filename TEXT NOT NULL DEFAULT '',
     parser TEXT NOT NULL DEFAULT 'heuristic',
@@ -111,6 +112,9 @@ const MIGRATIONS = [
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS stated_credits DOUBLE PRECISION`,
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS paid_at TEXT`,
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS previous_balance DOUBLE PRECISION`,
+  // Findings the cardholder has looked at and accepted. Kept apart from
+  // checks_json, which is rebuilt whenever a transaction changes.
+  `ALTER TABLE statements ADD COLUMN IF NOT EXISTS reviewed_checks TEXT NOT NULL DEFAULT '{}'`,
   `ALTER TABLE transactions DROP COLUMN IF EXISTS txn_time`,
   // The month a statement belongs to, filled in for statements saved before it
   // existed. Same rule as statementMonthFor in bills.ts.

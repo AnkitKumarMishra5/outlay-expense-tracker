@@ -9,6 +9,7 @@ import BankBadge from "@/components/BankBadge";
 import { inr, monthTitle } from "@/lib/format";
 import MonthPicker from "@/components/MonthPicker";
 import { Check } from "@/lib/types";
+import { parseReviewed, withReviewed } from "@/lib/checks";
 import { useReveal } from "@/lib/useReveal";
 import { getJson } from "@/lib/api";
 import { play } from "@/lib/sound";
@@ -29,6 +30,7 @@ interface Row {
   total_credits: number;
   txn_count: number;
   checks_json: string;
+  reviewed_checks: string | null;
   created_at: string;
 }
 
@@ -133,13 +135,16 @@ export default function Statements() {
               </div>
               <ul className="space-y-2">
                 {group.items.map((s, i) => {
-                  const checks: Check[] = JSON.parse(s.checks_json || "[]");
-                  const warns = checks.filter((c) => c.status === "warn").length;
-                  const fails = checks.filter((c) => c.status === "fail").length;
-                  const issues = checks.filter((c) => c.status !== "pass");
+                  const checks = withReviewed(JSON.parse(s.checks_json || "[]") as Check[], parseReviewed(s.reviewed_checks));
+                  const issues = checks.filter((c) => c.status !== "pass" && !c.reviewed);
+                  const warns = issues.filter((c) => c.status === "warn").length;
+                  const fails = issues.filter((c) => c.status === "fail").length;
+                  const reviewedCount = checks.filter((c) => c.reviewed).length;
                   const checkHint = issues.length
                     ? issues.map((c) => `${c.status === "fail" ? "Failed" : "Warning"}: ${c.label}`).join("\n")
-                    : `All ${checks.length} checks passed`;
+                    : reviewedCount
+                      ? `All ${checks.length} checks passed or reviewed`
+                      : `All ${checks.length} checks passed`;
                   const due = Number(s.total_due ?? s.total_debits);
                   return (
                     <li key={s.id} data-reveal style={{ "--d": `${Math.min(i, 8) * 55}ms` } as React.CSSProperties}>

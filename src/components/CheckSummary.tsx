@@ -6,9 +6,10 @@ const R = 26;
 const CIRC = 2 * Math.PI * R;
 
 export default function CheckSummary({ checks }: { checks: Check[] }) {
-  const pass = checks.filter((c) => c.status === "pass").length;
-  const warn = checks.filter((c) => c.status === "warn").length;
-  const fail = checks.filter((c) => c.status === "fail").length;
+  const reviewed = checks.filter((c) => c.reviewed).length;
+  const pass = checks.filter((c) => c.status === "pass").length + reviewed;
+  const warn = checks.filter((c) => c.status === "warn" && !c.reviewed).length;
+  const fail = checks.filter((c) => c.status === "fail" && !c.reviewed).length;
   const total = Math.max(1, checks.length);
 
   const segments = [
@@ -64,6 +65,11 @@ export default function CheckSummary({ checks }: { checks: Check[] }) {
         <dd className="text-lg font-semibold tabular">{pass}</dd>
         <dd className="text-lg font-semibold tabular">{warn}</dd>
         <dd className="text-lg font-semibold tabular">{fail}</dd>
+        {reviewed > 0 && (
+          <p className="col-span-3 mt-1 text-xs text-muted">
+            {reviewed} reviewed by you, counted as passed
+          </p>
+        )}
       </dl>
     </div>
   );
