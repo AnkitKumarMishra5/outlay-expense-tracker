@@ -10,6 +10,8 @@ export interface LayoutCell {
 /** One printed row of a page, split into the cells it was typeset as. */
 export interface LayoutRow {
   page: number;
+  /** Height on the page, larger is higher. */
+  y: number;
   cells: LayoutCell[];
 }
 
@@ -174,7 +176,7 @@ async function extractPages(doc: OpenedDoc): Promise<{ text: string; layout: Lay
       if (!line.trim()) continue;
       lines.push(line.trim());
       const kept = columns.map((c) => ({ ...c, text: c.text.trim() })).filter((c) => c.text);
-      if (kept.length) layout.push({ page: i, cells: kept });
+      if (kept.length) layout.push({ page: i, y, cells: kept });
     }
     lines.push("");
   }

@@ -23,7 +23,24 @@ const NAMED_DATE_RE = /^(\d{1,2})[\s-]?([A-Za-z]{3,9})\.?,?[\s\-'\u2019]+(\d{4}|
 /** "Aug 24, 2026", month first. */
 const MONTH_FIRST_ROW_RE = /^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4}|\d{2})\b(?![.,]\d)/;
 
-function rowStart(line: string): { rest: string; date: string | null } | null {
+/** "14 Oct" with no year at all, which some issuers print on every row. */
+const DAY_MONTH_ROW_RE = /^(\d{1,2})[\s-]([A-Za-z]{3,9})\b(?![\s\-'\u2019]*\d)/;
+
+/**
+ * A year-less day and month, given the year of the statement it is on. A month
+ * after the statement's means the year before, and anything more than a few
+ * months back is not a row of this statement.
+ */
+function withYear(dd: string, mon: string, close: string | undefined): string | undefined {
+  if (!close) return undefined;
+  const year = Number(close.slice(0, 4));
+  let iso = fromTextDate(dd, mon, String(year));
+  if (iso && iso > close) iso = fromTextDate(dd, mon, String(year - 1));
+  if (!iso || Date.parse(close) - Date.parse(iso) > 120 * 86_400_000) return undefined;
+  return iso;
+}
+
+function rowStart(line: string, close?: string): { rest: string; date: string | null } | null {
   const direct = line.match(DATE_RE);
   if (direct) return { rest: line.slice(direct[0].length).trim(), date: toISO(direct[1], direct[2], direct[3]) };
 
@@ -37,6 +54,12 @@ function rowStart(line: string): { rest: string; date: string | null } | null {
   if (monthFirst) {
     const iso = fromTextDate(monthFirst[2], monthFirst[1], monthFirst[3]);
     if (iso) return { rest: line.slice(monthFirst[0].length).trim(), date: iso };
+  }
+
+  const dayMonth = line.match(DAY_MONTH_ROW_RE);
+  if (dayMonth) {
+    const iso = withYear(dayMonth[1], dayMonth[2], close);
+    if (iso) return { rest: line.slice(dayMonth[0].length).trim(), date: iso };
   }
 
   const loose = line.match(LEADING_NOISE_RE);
@@ -92,8 +115,8 @@ function cleanDescription(raw: string): string {
     .replace(/\s*\+\s*\d[\d,]*\s*$/, "")
     .replace(/[+\-]?\s*[\u20b9$]\s*$/, "")
     .replace(/\s*[+\-]\s*\d[\d,]*\s*$/, "")
-    // A points column sits two spaces clear; "BPCL Ufill 2" is one cell.
-    .replace(/\s{2,}[+\-]?\d{1,4}\s*$/, "")
+    // A points column sits two spaces clear, "45" or "8.18"; "BPCL Ufill 2" is one cell.
+    .replace(/\s{2,}[+\-]?\d{1,4}(?:\.\d{1,2})?\s*$/, "")
     .replace(/(?:\s+[A-Za-z]\b)+\s*$/, "")
     .replace(/\s{2,}/g, " ")
     .trim();
@@ -119,12 +142,14 @@ const SKIP_RE =
 export function heuristicParse(text: string, layout?: LayoutRow[], rules: CategoryRule[] = []): ParsedStatement {
   const transactions: ParsedTxn[] = [];
   const lines = text.split("\n");
+  const summary = extractSummary(text, layout);
+  const close = summary.statementDate ?? summary.periodEnd;
   let trailingColumn = false;
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
     const line = raw.trim();
     if (!line || SKIP_RE.test(line)) continue;
-    const head = rowStart(line);
+    const head = rowStart(line, close);
     if (!head) {
       // Each table header decides for the rows under it.
       if (/\bAMOUNT\b/i.test(line)) trailingColumn = TRAILING_COLUMN_RE.test(line);
@@ -166,7 +191,6 @@ export function heuristicParse(text: string, layout?: LayoutRow[], rules: Catego
       isInternational: INTL_RE.test(description),
     });
   }
-  const summary = extractSummary(text, layout);
   // Whatever layout slipped it through, an unnamed charge dated the due date
   // for exactly the minimum or total due is that due, not a purchase.
   const isDue = (t: ParsedTxn) =>
@@ -511,6 +535,13 @@ export function extractSummary(text: string, layout?: LayoutRow[]): StatementSum
   summary.totalDue ??= findAmount(text, /total outstanding/);
   unlabelledDates(text, summary);
 
+  const vertical = verticalSummary(layout, summary.totalDue);
+  if (vertical) {
+    summary.previousBalance ??= vertical.previousBalance;
+    summary.statedDebits ??= vertical.statedDebits;
+    summary.statedCredits ??= vertical.statedCredits;
+  }
+
   // A credit limit is never a total. Any figure printed under a limit heading
   // is struck from the stated totals, whichever reader picked it up.
   const limits = limitFigures(text);
@@ -679,6 +710,68 @@ function gridSummary(layout: LayoutRow[] | undefined): Partial<StatementSummary>
       statedCredits: round(credits),
       statedDebits: round(debits),
       totalDue: round(total),
+    };
+  }
+  return null;
+}
+
+/**
+ * A balance worked down the page, one term to a line: "Opening Balance", then
+ * "Spends  +", "Repayments & Refunds  -" and so on, each figure in a column to
+ * the right and set a little above or below its label, so it lands on a row of
+ * its own. Figures are paired with labels by height on the page, the operator
+ * gives each its sign, and the result is only trusted if it comes to the total.
+ */
+function verticalSummary(layout: LayoutRow[] | undefined, total: number | undefined): Partial<StatementSummary> | null {
+  if (!layout?.length || total === undefined) return null;
+  const money = /^((?:\d{1,3}(?:,\d{2,3})*|\d+)\.\d{2})(?:\s*(Cr|Dr)\b)?$/i;
+  for (const page of new Set(layout.map((r) => r.page))) {
+    const rows = layout.filter((r) => r.page === page);
+    const terms: { sign: string; y: number; x: number }[] = [];
+    for (const row of rows) {
+      const at = row.cells.findIndex((c) => /^[+\-\u2212]$/.test(c.text));
+      if (at > 0 && /[A-Za-z]{3,}/.test(row.cells[at - 1].text)) {
+        terms.push({ sign: row.cells[at].text === "+" ? "+" : "-", y: row.y, x: row.cells[at].x1 });
+      }
+    }
+    if (terms.length < 3) continue;
+    const first = rows.findIndex((r) => r.y === terms[0].y);
+    const opening = rows
+      .slice(Math.max(0, first - 3), first)
+      .reverse()
+      .find((r) => r.cells.some((c) => /^(?:opening|previous) balance\b/i.test(c.text)));
+    const right = Math.min(...terms.map((t) => t.x));
+    const figures = rows.flatMap((r) =>
+      r.cells.filter((c) => c.x0 > right && money.test(c.text)).map((c) => ({ y: r.y, text: c.text }))
+    );
+    const used = new Set<number>();
+    const figureAt = (y: number): number | undefined => {
+      let best = -1;
+      figures.forEach((f, k) => {
+        if (Math.abs(f.y - y) <= 12 && (best === -1 || Math.abs(f.y - y) < Math.abs(figures[best].y - y))) best = k;
+      });
+      if (best === -1 || used.has(best)) return undefined;
+      used.add(best);
+      const m = figures[best].text.match(money)!;
+      return m[2]?.toLowerCase() === "cr" ? -parseAmount(m[1]) : parseAmount(m[1]);
+    };
+    const previous = opening ? figureAt(opening.y) : 0;
+    if (previous === undefined) continue;
+    let debits = 0;
+    let credits = 0;
+    let complete = true;
+    for (const t of terms) {
+      const v = figureAt(t.y);
+      if (v === undefined) { complete = false; break; }
+      if (t.sign === "+") debits += Math.abs(v);
+      else credits += Math.abs(v);
+    }
+    if (!complete || Math.abs(previous - credits + debits - total) > Math.max(1, Math.abs(total) * 0.005)) continue;
+    const round = (n: number) => Math.round(n * 100) / 100;
+    return {
+      previousBalance: opening ? round(previous) : undefined,
+      statedDebits: round(debits),
+      statedCredits: round(credits),
     };
   }
   return null;
