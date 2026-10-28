@@ -36,6 +36,7 @@ const SCHEMA = [
     last4_enc TEXT,
     first4_enc TEXT,
     password_enc TEXT,
+    position INTEGER,
     created_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS statements (
@@ -108,6 +109,8 @@ const MIGRATIONS = [
   `ALTER TABLE profile ADD COLUMN IF NOT EXISTS custom_patterns TEXT NOT NULL DEFAULT '[]'`,
   `ALTER TABLE cards ADD COLUMN IF NOT EXISTS last4_enc TEXT`,
   `ALTER TABLE cards ADD COLUMN IF NOT EXISTS first4_enc TEXT`,
+  // Where the cardholder put the card in their list. Cards never arranged sort after, oldest first.
+  `ALTER TABLE cards ADD COLUMN IF NOT EXISTS position INTEGER`,
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS stated_debits DOUBLE PRECISION`,
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS stated_credits DOUBLE PRECISION`,
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS paid_at TEXT`,
@@ -118,6 +121,8 @@ const MIGRATIONS = [
   `ALTER TABLE transactions DROP COLUMN IF EXISTS txn_time`,
   // The month a statement belongs to, filled in for statements saved before it
   // existed. Same rule as statementMonthFor in bills.ts.
+  // OneCard is issued by BOBCARD, not a bank of its own.
+  `UPDATE cards SET bank_id = 'bobcard', bank_name = 'BOBCARD' WHERE bank_id = 'onecard'`,
   `ALTER TABLE statements ADD COLUMN IF NOT EXISTS statement_month TEXT`,
   `UPDATE statements s SET statement_month = substr(COALESCE(
      s.statement_date,

@@ -26,7 +26,6 @@ const BANK_HINTS: Record<string, RegExp> = {
   sc: /standard chartered/i,
   au: /au small finance|au bank/i,
   federal: /federal bank/i,
-  onecard: /onecard|one ?card/i,
   bobcard: /bobcard|bank of baroda/i,
 };
 

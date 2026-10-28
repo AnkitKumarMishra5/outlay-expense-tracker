@@ -428,7 +428,7 @@ const CategoryTrendPanel = memo(function CategoryTrendPanel({ timeline }: { time
   return (
     <div className="card rise min-w-0 p-5 lg:col-span-2" style={{ "--d": "240ms" } as React.CSSProperties}>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-medium text-ink2">Where it went, month by month</h2>
+        <h2 className="text-sm font-medium text-ink2">Category trends</h2>
         <RunControls by={by} onBy={setBy} span={span} onSpan={setSpan} />
       </div>
       {timeline ? (

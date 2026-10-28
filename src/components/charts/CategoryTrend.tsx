@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { axisTick, inr, monthLabel } from "@/lib/format";
 import { categoryColor, useChartTokens } from "@/lib/chartTokens";
 
@@ -73,9 +73,9 @@ function Tip({
 }
 
 /**
- * Where the money went across the run: one column per month, stacked by
- * category with the biggest at the base and Other on top. Picking a category
- * lifts it out on its own scale, so a small one's trend reads clearly too.
+ * How each category moved across the run: one line per category, so a rise or
+ * fall shows as a slope rather than a change in a stacked column. Picking a
+ * category shows it alone on its own scale, so a small one's trend reads too.
  */
 export default function CategoryTrend({
   data,
@@ -123,13 +123,13 @@ export default function CategoryTrend({
 
   const active = focus && categories.includes(focus) ? focus : null;
   const shown = active ? [active] : categories;
-  const ticks = niceTicks(Math.max(0, ...rows.map((r) => shown.reduce((a, c) => a + Number(r[c] ?? 0), 0))));
+  const ticks = niceTicks(Math.max(0, ...rows.flatMap((r) => shown.map((c) => Number(r[c] ?? 0)))));
 
   return (
     <div>
       <div className="chart-grow">
         <ResponsiveContainer width="100%" height={height}>
-          <BarChart data={rows} margin={{ top: 10, right: 8, left: 8, bottom: 0 }} barCategoryGap="24%">
+          <LineChart data={rows} margin={{ top: 10, right: 16, left: 8, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke={t.grid} />
             <XAxis
               dataKey="label"
@@ -138,6 +138,7 @@ export default function CategoryTrend({
               tick={{ fill: t.muted, fontSize: 12 }}
               interval="preserveStartEnd"
               minTickGap={6}
+              padding={{ left: 16, right: 16 }}
             />
             <YAxis
               tickLine={false}
@@ -149,7 +150,7 @@ export default function CategoryTrend({
               tickFormatter={axisTick}
             />
             <Tooltip
-              cursor={{ fill: t.line }}
+              cursor={{ stroke: t.axis, strokeDasharray: "3 3" }}
               content={({ active: on, label, payload }) => (
                 <Tip
                   active={on}
@@ -161,19 +162,18 @@ export default function CategoryTrend({
               )}
             />
             {shown.map((c) => (
-              <Bar
+              <Line
                 key={c}
+                type="linear"
                 dataKey={c}
-                stackId="spend"
-                fill={categoryColor(c, t)}
-                stroke={t.surface}
-                strokeWidth={active ? 0 : 1}
-                maxBarSize={44}
-                radius={active ? [4, 4, 0, 0] : 0}
+                stroke={categoryColor(c, t)}
+                strokeWidth={active ? 2.5 : 2}
+                dot={{ r: 3, strokeWidth: 0, fill: categoryColor(c, t) }}
+                activeDot={{ r: 5, strokeWidth: 2, stroke: t.surface }}
                 isAnimationActive={false}
               />
             ))}
-          </BarChart>
+          </LineChart>
         </ResponsiveContainer>
       </div>
 

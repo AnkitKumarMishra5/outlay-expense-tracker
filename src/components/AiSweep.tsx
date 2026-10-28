@@ -9,6 +9,7 @@ import { useToast } from "./Toasts";
 import { inr, monthTitle } from "@/lib/format";
 import { play } from "@/lib/sound";
 import { useLock } from "@/lib/useLock";
+import { getJson } from "@/lib/api";
 import type { AiProposal } from "@/lib/aiSweep";
 
 interface AiState {
@@ -46,8 +47,7 @@ export default function AiSweep({ onApplied }: { onApplied: () => void }) {
   const lock = useLock();
 
   const loadState = useCallback(() => {
-    fetch("/api/transactions/recategorize")
-      .then((r) => (r.ok ? r.json() : null))
+    getJson<{ ai?: AiState }>("/api/transactions/recategorize")
       .then((d) => d?.ai && setAi(d.ai))
       .catch(() => {});
   }, []);

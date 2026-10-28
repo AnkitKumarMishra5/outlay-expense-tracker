@@ -16,6 +16,7 @@ import { Check, StatementRow } from "@/lib/types";
 import { parseReviewed, withReviewed } from "@/lib/checks";
 import CountUp from "@/components/CountUp";
 import { useToast } from "@/components/Toasts";
+import { getJson } from "@/lib/api";
 import type { AiState } from "@/lib/aiQuota";
 
 interface Detail {
@@ -36,11 +37,10 @@ export default function StatementDetail({ params }: { params: Promise<{ id: stri
   const toast = useToast();
 
   const load = useCallback(() => {
-    fetch(`/api/statements/${id}`).then(async (r) => {
-      if (!r.ok) return setMissing(true);
-      setData(await r.json());
-    });
-  }, [id]);
+    getJson<Detail>(`/api/statements/${id}`, () => router.replace("/login?expired=1")).then((d) =>
+      d ? setData(d) : setMissing(true)
+    );
+  }, [id, router]);
 
   useEffect(() => {
     load();
