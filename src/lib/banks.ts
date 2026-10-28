@@ -25,7 +25,6 @@ export const BANKS: Bank[] = [
   { id: "sc", name: "Standard Chartered", short: "SC", color: "#0F7A3D", c2: "#2FA3D9", c3: "#08461F", patterns: ["N4U_DDMM"] },
   { id: "au", name: "AU Small Finance", short: "AU", color: "#ED7621", c2: "#7A2E8D", c3: "#8A3D0C", patterns: ["N4U_DDMM"] },
   { id: "federal", name: "Federal Bank", short: "FB", color: "#F7A800", c2: "#0072BC", c3: "#8A5E00", fg: "#1a1a19", patterns: ["N4U_DDMM"] },
-  { id: "onecard", name: "OneCard (FPL)", short: "OC", color: "#141414", c2: "#3A3A3A", c3: "#050505", patterns: [], usuallyUnlocked: true },
   { id: "bobcard", name: "BOBCARD", short: "BC", color: "#F15A29", c2: "#FF8D3A", c3: "#8A2F12", patterns: ["N4U_DDMM"] },
   { id: "other", name: "Other issuer", short: "??", color: "#52514e", c2: "#6E6C66", c3: "#2E2D2B", patterns: [] },
 ];

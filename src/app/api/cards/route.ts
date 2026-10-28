@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
             COALESCE(ai_usage.used, 0) AS ai_used
        FROM cards
        LEFT JOIN ai_usage ON ai_usage.card_id = cards.id AND ai_usage.user_id = cards.user_id AND ai_usage.month = $2
-      WHERE cards.user_id = $1 ORDER BY cards.created_at`,
+      WHERE cards.user_id = $1 ORDER BY cards.position NULLS LAST, cards.created_at`,
     [userId, currentMonth()]
   );
   return NextResponse.json({
@@ -63,4 +63,22 @@ export async function POST(req: NextRequest) {
     ]
   );
   return NextResponse.json({ ok: true, id });
+}
+
+/** Saves the order the cardholder arranged their cards in. */
+export async function PUT(req: NextRequest) {
+  const userId = await currentUserId(req);
+  if (!userId) return unauthorized();
+  const { order } = await req.json().catch(() => ({}));
+  if (!Array.isArray(order) || order.length > 500 || !order.every((id) => typeof id === "string")) {
+    return NextResponse.json({ error: "A list of card ids is required." }, { status: 400 });
+  }
+  const c = await db();
+  await c.execute(
+    `UPDATE cards SET position = o.pos
+       FROM unnest($1::text[]) WITH ORDINALITY AS o(id, pos)
+      WHERE cards.id = o.id AND cards.user_id = $2`,
+    [order, userId]
+  );
+  return NextResponse.json({ ok: true });
 }

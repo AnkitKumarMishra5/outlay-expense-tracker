@@ -5,6 +5,7 @@ import Nav from "@/components/Nav";
 import Footer from "@/components/Footer";
 import ToastProvider from "@/components/Toasts";
 import RouteProgress from "@/components/RouteProgress";
+import ApiCache from "@/components/ApiCache";
 import CelebrationHost from "@/components/Celebration";
 import { APP_NAME, APP_TAGLINE, DEVELOPER } from "@/lib/developer";
 import { siteUrl } from "@/lib/site";
@@ -73,6 +74,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <StructuredData />
         <div className="aurora" aria-hidden />
         <ToastProvider>
+          <ApiCache />
           <RouteProgress />
           <CelebrationHost />
           <Nav />

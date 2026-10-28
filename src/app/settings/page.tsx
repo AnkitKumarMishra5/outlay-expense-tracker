@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import AddCardForm from "@/components/AddCardForm";
 import CategoryRules from "@/components/CategoryRules";
 import BankBadge from "@/components/BankBadge";
+import CardOrderList from "@/components/CardOrderList";
 import ConfirmDelete from "@/components/ConfirmDelete";
 import { CardRow } from "@/lib/types";
 import { useToast } from "@/components/Toasts";
@@ -44,6 +45,55 @@ export default function Settings() {
       (c.last4 ?? "").includes(q)
     );
   });
+
+  const cardBody = (c: CardRow) => (
+    <>
+      <BankBadge bankId={c.bank_id} size={30} />
+      <div className="min-w-0">
+        <p>
+          {c.card_label}{" "}
+          {c.last4 ? (
+            <span className="text-xs text-muted tabular">•••• {c.last4}</span>
+          ) : (
+            <span className="text-xs text-warn">no last 4 saved</span>
+          )}
+          {c.first4 && <span className="ml-2 text-xs text-muted tabular">{c.first4} ••••</span>}
+        </p>
+        <p className="text-xs text-muted">
+          {c.has_password ? "statement password stored, AES-256-GCM encrypted" : "statement password derived on first upload"}
+        </p>
+      </div>
+      <span className="ml-auto flex items-center gap-3">
+        <CardDigits cardId={c.id} last4={c.last4} first4={c.first4} onSaved={loadCards} />
+        {removingCard?.id === c.id && (
+          <ConfirmDelete
+            card={c}
+            onCancel={() => setRemovingCard(null)}
+            onDeleted={() => {
+              setRemovingCard(null);
+              toast.push("Card removed", { detail: "Its statements and transactions were deleted.", tone: "warn" });
+              load();
+            }}
+          />
+        )}
+        <button onClick={() => setRemovingCard(c)} className="text-xs text-muted hover:text-bad">
+          Remove
+        </button>
+      </span>
+    </>
+  );
+
+  async function saveOrder(next: CardRow[]) {
+    const res = await fetch("/api/cards", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order: next.map((c) => c.id) }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      toast.push("Could not save the card order", { tone: "bad" });
+      loadCards();
+    }
+  }
 
   const load = () => {
     getJson<{ hasProfile: boolean; name: string; dobMasked: string; patterns: SavedPattern[] }>("/api/profile").then(
@@ -219,6 +269,9 @@ export default function Settings() {
             {showAdd ? "Close" : "+ Add card"}
           </button>
         </div>
+        {cards.length > 1 && !cardQuery.trim() && (
+          <p className="mb-3 text-xs text-muted">Drag a card by its handle to arrange them. Every list of cards follows this order.</p>
+        )}
         {cards.length > 8 && (
           <input
             value={cardQuery}
@@ -227,48 +280,23 @@ export default function Settings() {
             className="mb-3 w-full rounded-lg border border-line bg-surface2 px-3 py-1.5 text-sm outline-none placeholder:text-muted focus:border-accent sm:w-64"
           />
         )}
-        <ul className="space-y-2">
-          {visibleCards.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line p-3 text-sm">
-              <BankBadge bankId={c.bank_id} size={30} />
-              <div className="min-w-0">
-                <p>
-                  {c.card_label}{" "}
-                  {c.last4 ? (
-                    <span className="text-xs text-muted tabular">•••• {c.last4}</span>
-                  ) : (
-                    <span className="text-xs text-warn">no last 4 saved</span>
-                  )}
-                  {c.first4 && <span className="ml-2 text-xs text-muted tabular">{c.first4} ••••</span>}
-                </p>
-                <p className="text-xs text-muted">
-                  {c.has_password ? "statement password stored, AES-256-GCM encrypted" : "statement password derived on first upload"}
-                </p>
-              </div>
-              <span className="ml-auto flex items-center gap-3">
-                <CardDigits cardId={c.id} last4={c.last4} first4={c.first4} onSaved={loadCards} />
-                {removingCard?.id === c.id && (
-                  <ConfirmDelete
-                    card={c}
-                    onCancel={() => setRemovingCard(null)}
-                    onDeleted={() => {
-                      setRemovingCard(null);
-                      toast.push("Card removed", { detail: "Its statements and transactions were deleted.", tone: "warn" });
-                      load();
-                    }}
-                  />
-                )}
-                <button onClick={() => setRemovingCard(c)} className="text-xs text-muted hover:text-bad">
-                  Remove
-                </button>
-              </span>
-            </li>
-          ))}
-          {cards.length === 0 && <p className="text-sm text-muted">No cards yet.</p>}
-          {cards.length > 0 && visibleCards.length === 0 && (
-            <p className="text-sm text-muted">No cards match “{cardQuery}”.</p>
-          )}
-        </ul>
+        {cardQuery.trim() ? (
+          <ul className="space-y-2">
+            {visibleCards.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line p-3 text-sm">
+                {cardBody(c)}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <CardOrderList cards={cards} onArrange={setCards} onSave={saveOrder}>
+            {cardBody}
+          </CardOrderList>
+        )}
+        {cards.length === 0 && <p className="text-sm text-muted">No cards yet.</p>}
+        {cards.length > 0 && visibleCards.length === 0 && (
+          <p className="text-sm text-muted">No cards match “{cardQuery}”.</p>
+        )}
         {showAdd && (
           <div className="mt-4 border-t border-line pt-4">
             <AddCardForm
